@@ -85,15 +85,59 @@ def test_label_in_feature_matrix_trips_the_gate(dataset: Dataset) -> None:
     assert study.mean_bss > 0.5, study.summary()
 
 
-def test_train_test_overlap_trips_the_gate(dataset: Dataset) -> None:
-    """Label information reaches the model through the training set itself."""
+def test_target_encoding_on_all_data_trips_the_gate(dataset: Dataset) -> None:
+    """Preprocessing that carries *label* information, fitted on everything.
+
+    Unlike train/test overlap this arrives as a feature column rather than as
+    rows to memorise, so a four-parameter linear combiner can read it. This is
+    the fixture that genuinely covers the "preprocessing fitted on all data"
+    category.
+    """
+    features, labels, folds = dataset
+
+    study = run_shuffled_label_study(
+        features,
+        labels,
+        folds,
+        seeds=TEST_SEEDS,
+        leak=LeakMode.TARGET_ENCODING_ON_ALL,
+    )
+
+    assert not study.passed
+    assert study.mean_bss > 0.05, study.summary()
+
+
+def test_train_test_overlap_is_invisible_to_a_low_capacity_combiner(
+    dataset: Dataset,
+) -> None:
+    """A real leak this gate does not catch. Recorded, not hidden.
+
+    Measured at the H-001 geometry: mean BSS -0.0009, gate silent. The combiner
+    has four parameters and cannot memorise the 167 overlapped rows, which
+    carry random labels and under 2% of the gradient.
+
+    Detectability is a property of the estimator, not of the leak: a
+    high-capacity stacker would trip immediately. This test exists so the
+    limitation is a measured fact rather than an assumption, and so nobody
+    reads a green K-1 as proof that fold construction is sound.
+
+    An earlier draft asserted the opposite. It tripped on a 6,000-bar sample
+    with five seeds and stayed silent at full scale — a fixture that appeared
+    to work for the wrong reason, which is worse than none.
+
+    What is asserted here is the *effect size*, not the verdict. At five seeds
+    the pass/fail outcome is noise-dominated: the median BSS straddles zero and
+    flips sign between configurations. The stable, reportable fact is that the
+    leak yields no material skill — orders of magnitude away from
+    ``LABEL_IN_FEATURES`` (+0.9999) or ``TARGET_ENCODING_ON_ALL`` (+0.24).
+    """
     features, labels, folds = dataset
 
     study = run_shuffled_label_study(
         features, labels, folds, seeds=TEST_SEEDS, leak=LeakMode.TRAIN_TEST_OVERLAP
     )
 
-    assert not study.passed, study.summary()
+    assert abs(study.mean_bss) < 0.01, study.summary()
 
 
 def test_scaler_fit_on_all_data_does_not_trip_the_gate(dataset: Dataset) -> None:

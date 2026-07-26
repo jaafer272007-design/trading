@@ -59,12 +59,65 @@ class LeakMode(Enum):
     TRAIN_TEST_OVERLAP = "train_test_overlap"
     """Include the test indices in the training set.
 
-    Label information reaches the model directly, so the combiner can memorise
-    the shuffled labels of the very rows it is scored on. Must trip K-1. This
-    is the fixture that actually exercises the gate's sensitivity to
-    preprocessing-shaped mistakes, because unlike ``SCALER_FIT_ON_ALL`` it
-    carries labels rather than only feature statistics.
+    A genuine and serious leak — and one this gate does **not** detect with the
+    combiner configured here. Measured at the H-001 geometry: mean BSS
+    ``-0.0009``, gate silent.
+
+    The reason is capacity, not correctness. The combiner has three features
+    plus an intercept: four parameters. Exploiting overlap requires memorising
+    individual rows, and 167 test rows folded into 10,000-26,000 training rows
+    contribute under 2% of the gradient while carrying random labels. Four
+    parameters cannot represent them, so the fitted coefficients barely move.
+
+    Detectability here is a property of the *estimator*, not of the leak.
+    A high-capacity stacker — the gradient-boosted one at ``EVALUATION.md`` §2
+    rung 7 — would memorise those rows and trip the gate immediately. Recorded
+    rather than removed, because "K-1 with a linear stacker cannot see
+    train/test overlap" is a limitation that has to be known before the gate is
+    trusted.
     """
+
+    TARGET_ENCODING_ON_ALL = "target_encoding_on_all"
+    """Append a target-mean encoding computed over train and test together.
+
+    The member of the "preprocessing fitted on everything" family that actually
+    carries label information rather than only feature statistics, and the one
+    a low-capacity linear model can still read — because the leak arrives as a
+    *feature column* rather than as rows to memorise.
+
+    High-cardinality buckets (~4 rows each) make it severe, which is exactly
+    the notorious real-world case: target-encoding a near-continuous or
+    near-unique key. Must trip K-1.
+    """
+
+
+_ENCODING_BUCKET_SIZE = 4
+"""Rows per target-encoding bucket. Small enough for a severe leak."""
+
+
+def _target_encode_on_all(
+    features: npt.NDArray[np.float64], labels: npt.NDArray[np.float64]
+) -> npt.NDArray[np.float64]:
+    """Compute a target-mean encoding over every row, train and test alike.
+
+    Buckets are rank-ordered on the first feature, ``_ENCODING_BUCKET_SIZE``
+    rows apiece, and each row receives the mean label of its bucket — including
+    its own. That is the leak.
+
+    Args:
+        features: Design matrix.
+        labels: Labels, already permuted by the caller where applicable.
+
+    Returns:
+        One encoded column, aligned to ``features`` rows.
+    """
+    order = np.argsort(features[:, 0], kind="stable")
+    bucket = np.empty(order.size, dtype=np.int64)
+    bucket[order] = np.arange(order.size) // _ENCODING_BUCKET_SIZE
+
+    sums = np.bincount(bucket, weights=labels)
+    counts = np.bincount(bucket)
+    return (sums / counts)[bucket]
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,6 +177,8 @@ def run_walk_forward(
     design = features
     if leak is LeakMode.LABEL_IN_FEATURES:
         design = np.column_stack([features, labels])
+    elif leak is LeakMode.TARGET_ENCODING_ON_ALL:
+        design = np.column_stack([features, _target_encode_on_all(features, labels)])
 
     results: list[FoldResult] = []
     for fold in folds:
