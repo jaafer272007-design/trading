@@ -234,6 +234,28 @@ phase.
 > boundaries, no DST, no gaps and no missing bars, so they cannot exercise the
 > `DATA_CONTRACT.md` §3/§4/§6 hazards that a real ingestion layer introduces.
 
+**Standing limitation — what a K-1 pass does and does not certify**
+
+> `train_test_overlap` does not trip at the current combiner capacity. Measured over 30
+> seeds and 834 pooled decisions: mean BSS −0.000901, gate silent. It is a genuine and
+> serious leak; the combiner simply has four parameters (three features plus an
+> intercept) and cannot memorise the 167 overlapped rows needed to exploit it.
+>
+> **A K-1 pass therefore certifies that no label reaches the model. It does not certify
+> the absence of all leakage.** Specifically, it does not cover:
+>
+> - **train/test overlap** — below capacity here; a higher-capacity stacker would trip on
+>   it (`REPRODUCIBILITY.md` §6).
+> - **purge or embargo defects** — global permutation destroys the autocorrelation those
+>   controls exist for, so the gate is structurally blind to them regardless of capacity.
+>   Needs the separate integrity check at `REPRODUCIBILITY.md` §6 Tier 1 step 4.
+> - **features that peek at future prices** — shuffling labels leaves features untouched.
+>   That is §5.3 / K-2's job.
+>
+> Sensitivity is a property of the combiner, not of the gate, and is re-measured and
+> enforced on every combiner change — see `REPRODUCIBILITY.md` §6 and
+> `src/evaluation/sensitivity.py`.
+
 ---
 
 ### H-002 — Temporal causality of all features
