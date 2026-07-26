@@ -113,8 +113,7 @@ These four are registered now, before any code exists. They define the project's
 phase.
 
 ### H-001 — Pipeline integrity under shuffled labels
-
-- **Registered:** (fill on commit)
+- **Registered:** 2026-07-26 14:32 UTC
 - **Status:** REGISTERED
 
 **Claim**
@@ -132,6 +131,7 @@ phase.
 
 ### H-002 — Temporal causality of all features
 
+- **Registered:** 2026-07-26 14:32 UTC
 - **Status:** REGISTERED
 
 **Claim**
@@ -148,6 +148,7 @@ phase.
 
 ### H-003 — Signal beats random entry
 
+- **Registered:** 2026-07-26 14:32 UTC
 - **Status:** REGISTERED
 
 **Claim**
@@ -167,6 +168,7 @@ phase.
 
 ### H-004 — LLM synthesis vs. deterministic combination (SC-1)
 
+- **Registered:** 2026-07-26 14:32 UTC
 - **Status:** REGISTERED
 
 **Claim**
