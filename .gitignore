@@ -7,3 +7,6 @@ __pycache__/
 .env
 runs/
 logs/
+
+# Claude Code local overrides (per-developer, not shared)
+.claude/settings.local.json
