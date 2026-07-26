@@ -116,9 +116,32 @@ selection. DSR (Bailey & López de Prado) adjusts for:
 Randomly permute the mapping between market-state snapshots and their outcomes, then run
 the full pipeline.
 
-- Run over **≥ 30 seeds** to build a null distribution.
-- Pass condition: measured edge falls **inside** the null distribution's 95% interval.
+- Run over **≥ 30 seeds** to build the null distribution of BSS under permuted labels.
+- Under permuted labels the true skill is exactly zero, so **the null distribution must
+  itself be centred at or below zero.** Out-of-sample BSS should be slightly *negative*: a
+  model fit on noise can only overfit, and overfitting costs skill.
+- Pass condition — all three must hold, over the enumerated seeds:
+  - upper bound of the 95% percentile-bootstrap CI of mean BSS ≤ **0.01**;
+  - `max` per-seed BSS ≤ **0.05** (no single seed may reach K-3's skill threshold);
+  - median per-seed BSS ≤ **0**.
 - Any edge on shuffled labels means leakage or a bug. **K-1.**
+
+> **On the ε = 0.01 bound.** This is an equivalence-style materiality floor, not a test of
+> `E[BSS] = 0`. A strict test against zero is hypersensitive — with 30 seeds and low
+> variance, a numerically meaningless bias of +0.0001 yields a large test statistic and a
+> spurious halt. ε is one fifth of K-3's 0.05 threshold, below which "edge" is not a
+> coherent claim. It is a registered researcher degree of freedom; changing it requires a
+> new hypothesis ID.
+
+> **Scope.** This test detects leaks by which the *label* reaches the model: a label left
+> in the feature matrix, train/test index overlap, preprocessing that carries label
+> information fitted on all data, a combiner that sees evaluation rows during fit. It is
+> **blind to two other leak classes by construction**, and neither is covered here:
+> a feature that peeks at future *prices* is unaffected by label shuffling and is caught by
+> §5.3 / K-2; and a broken purge or embargo is neutralised by global permutation, because
+> once `label[T]` is a random draw from elsewhere in the series an overlapping label window
+> carries no test-period information. Purge and embargo therefore require their own
+> integrity check (`REPRODUCIBILITY.md` §6, Tier 1 step 4), which is a separate gate.
 
 ### 5.2 Purge and Embargo
 With label horizon `H`:

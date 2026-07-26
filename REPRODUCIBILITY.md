@@ -147,6 +147,37 @@ permitted to run, because its output would be meaningless.
 The sealed holdout. It is opened manually, with sign-off, three times in the project's
 life.
 
+### K-1 sensitivity is a property of the combiner
+
+K-1 sensitivity is a property of the combiner, not of the gate. `train_test_overlap` is
+undetectable at four parameters and becomes detectable as capacity grows. Any change to
+the combiner — different estimator, added parameters, changed regularisation — requires
+re-running the full leak-fixture suite and recording which modes trip. A combiner change
+without a recorded sensitivity re-measurement invalidates every subsequent K-1 pass.
+
+**Enforcement.** `src/evaluation/sensitivity.py` holds the recorded baseline alongside a
+semantic fingerprint of the combiner module. `tests/evaluation/test_sensitivity.py` fails
+the build when the fingerprint moves without a matching re-measurement — the same pattern
+as the feature-registry guard in `tests/test_causality.py`. The fingerprint is taken over
+the parsed AST with docstrings stripped, so comments and formatting do not trip it but
+any change to logic, hyperparameter defaults, or structure does.
+
+**Recorded baseline** — 30 seeds, 834 pooled decisions, 30,000 synthetic bars, combiner
+at **4 parameters** (3 features + intercept):
+
+| Leak mode | mean BSS | Gate |
+|---|---:|---|
+| `none` | −0.001390 | pass |
+| `label_in_features` | +0.999984 | **trips K-1** |
+| `target_encoding_on_all` | +0.239781 | **trips K-1** |
+| `train_test_overlap` | −0.000901 | silent — below capacity |
+| `scaler_fit_on_all` | −0.001390 | silent — leaks no label information |
+
+Two of five modes trip. The two silent modes are silent for different reasons, and only
+one of them is a capacity limit: `scaler_fit_on_all` carries no label information at all
+and would stay silent at any capacity, whereas `train_test_overlap` is a real leak that a
+higher-capacity estimator would catch.
+
 ---
 
 ## 7. Decision Log Schema

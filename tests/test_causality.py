@@ -22,6 +22,9 @@ import features
 from data.synthetic import generate_ohlcv
 from features.atr import ATR
 from features.base import Feature
+from features.log_return import LogReturn
+from features.range_position import RangePosition
+from features.realized_vol import RealizedVol
 from tests.causality import assert_all_causal
 
 SEEDS = (0, 1, 2)
@@ -29,7 +32,12 @@ SEEDS = (0, 1, 2)
 
 N_BARS = 600
 
-FEATURE_REGISTRY: tuple[Feature, ...] = (ATR(period=14),)
+FEATURE_REGISTRY: tuple[Feature, ...] = (
+    ATR(period=14),
+    LogReturn(window=24),
+    RealizedVol(window=24),
+    RangePosition(window=48),
+)
 """Every feature that ships.
 
 Adding a feature to ``src/features/`` without adding it here is caught by

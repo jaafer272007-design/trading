@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# hooks/pre-push — local pre-flight for the gates CI enforces
+# (.github/workflows/ci.yml). CI remains the authoritative gate; this hook
+# exists so a violation is caught before a push leaves the machine, not
+# after a round-trip to GitHub.
+#
+# One-time setup per clone (see README.md):
+#   git config core.hooksPath hooks
+#
+# Steps mirror CI's Tier 1 job in the same order. Each failure names the
+# gate and quotes the rule it enforces. Not every gate maps to an
+# EVALUATION.md §1 kill criterion — lint, format, and type checks are
+# CLAUDE.md Style requirements, not kill criteria — and this hook does not
+# pretend otherwise. Only the causal-test gate quotes a kill criterion
+# (K-2), because that is the only gate one actually governs.
+
+set -euo pipefail
+
+# git writes "<local ref> <local sha> <remote ref> <remote sha>" lines to
+# stdin for each ref being pushed. This hook does not need them, but they
+# must be drained rather than left unread on the pipe.
+cat >/dev/null
+
+readonly RED=$'\033[0;31m'
+readonly YELLOW=$'\033[0;33m'
+readonly RESET=$'\033[0m'
+
+reject() {
+  local gate="$1"
+  local rule="$2"
+  echo "" >&2
+  echo "${RED}pre-push: REJECTED${RESET} — gate failed: ${YELLOW}${gate}${RESET}" >&2
+  echo "${rule}" >&2
+  echo "" >&2
+  exit 1
+}
+
+# REPRODUCIBILITY.md §4 — pin BLAS threading so a reduction-order
+# difference from the developer's shell can't produce a result CI
+# wouldn't reproduce.
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export NUMEXPR_NUM_THREADS=1
+export PYTHONHASHSEED=0
+
+# --- 0. Dirty working tree -------------------------------------------------
+# REPRODUCIBILITY.md §5 (Run Manifest): "git_dirty: true voids the run. No
+# exceptions — an uncommitted change is an unrecorded change."
+# CLAUDE.md Hard Rule 10: "A dirty git tree voids a run. Commit before
+# evaluating."
+if [ -n "$(git status --porcelain)" ]; then
+  reject "dirty working tree" \
+'REPRODUCIBILITY.md §5: "git_dirty: true voids the run. No exceptions — an uncommitted change is an unrecorded change."
+CLAUDE.md Hard Rule 10: "A dirty git tree voids a run. Commit before evaluating."'
+fi
+
+echo "pre-push: working tree clean — running gates"
+
+# --- 1. ruff check -----------------------------------------------------
+echo "-- ruff check --"
+if ! uv run ruff check .; then
+  reject "ruff check" \
+'CLAUDE.md Style: "Python 3.12, type-hinted, ruff + mypy clean." No EVALUATION.md §1 kill criterion covers lint; this is a style requirement, not a kill criterion.'
+fi
+
+# --- 2. ruff format --check ----------------------------------------------
+echo "-- ruff format --check --"
+if ! uv run ruff format --check .; then
+  reject "ruff format --check" \
+'CLAUDE.md Style: "Python 3.12, type-hinted, ruff + mypy clean."'
+fi
+
+# --- 3. mypy --strict ------------------------------------------------------
+echo "-- mypy --strict --"
+if ! uv run mypy --strict; then
+  reject "mypy --strict" \
+'CLAUDE.md Style: "Python 3.12, type-hinted, ruff + mypy clean."'
+fi
+
+# --- 4. Causal test (K-2) -------------------------------------------------
+echo "-- causal test (K-2) --"
+if ! uv run pytest tests/test_causality.py tests/features; then
+  reject "causal test" \
+'EVALUATION.md §1, K-2: "Any feature fails the causal test" -> "Halt. Fix before any further run."
+DATA_CONTRACT.md §1: "tests/test_causality.py recomputes every feature on history truncated at T and asserts bit-identical equality with the full-history value at T. Runs on every commit. No exceptions, no skips, no xfail."'
+fi
+
+# --- 5. Full suite -----------------------------------------------------
+echo "-- full suite --"
+if ! uv run pytest; then
+  reject "full test suite" \
+'No single EVALUATION.md §1 kill criterion names a general test failure — K-2 above already covers causality specifically. The governing rule for everything else is CLAUDE.md Hard Rule 1 ("A feature without its causal test does not merge") and DATA_CONTRACT.md §1 ("No exceptions, no skips, no xfail"): a red test blocks a push regardless of which module it is in.'
+fi
+
+echo "${YELLOW}pre-push: all gates passed.${RESET}"
+exit 0
