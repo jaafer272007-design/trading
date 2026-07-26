@@ -8,11 +8,11 @@ Instructions for Claude Code working in this repository.
 
 Before writing any code, read in this order:
 
-1. `docs/RESEARCH.md` — what counts as evidence, and what this project refuses to be  
-2. `docs/DATA_CONTRACT.md` — temporal rules every feature must obey  
-3. `docs/EVALUATION.md` — kill criteria and measurement protocol  
-4. `docs/HYPOTHESES.md` — the registry; check what is currently in flight  
-5. `docs/REPRODUCIBILITY.md` — pinning, seeds, manifests
+1. RESEARCH.md` — what counts as evidence, and what this project refuses to be  
+2. DATA_CONTRACT.md` — temporal rules every feature must obey  
+3. EVALUATION.md` — kill criteria and measurement protocol  
+4. HYPOTHESES.md` — the registry; check what is currently in flight  
+5. REPRODUCIBILITY.md` — pinning, seeds, manifests
 
 These documents are the specification. Code that contradicts them is wrong even if it runs.
 
