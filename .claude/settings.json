@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "data/holdout/**",
+      "Read(data/holdout/**)"
+    ]
+  }
+}

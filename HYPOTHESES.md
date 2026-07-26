@@ -11,14 +11,16 @@
 > makes.
 
 ```
-Total hypotheses registered ......... N = 0
+Total hypotheses registered ......... N = 4
   ├─ Accepted ....................... 0
   ├─ Rejected ....................... 0
-  └─ In flight ...................... 0
+  └─ In flight ...................... 4
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
 ```
+
+In flight = status REGISTERED or RUNNING.
 
 **`N` is the denominator for every significance claim in this project.** It is passed to
 the Deflated Sharpe Ratio and the BH-FDR procedure. Rejected hypotheses count. Abandoned
