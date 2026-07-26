@@ -1,0 +1,111 @@
+[project]
+name = "trading-research"
+version = "0.1.0"
+description = "Quant research platform — causal test harness (infrastructure phase)."
+requires-python = "==3.12.*"
+
+# Exact pins, per REPRODUCIBILITY.md §4. Never a floating range in the
+# evaluation path: a transitive version bump can change float reduction
+# ordering and silently break the bit-exactness guarantee in §1 (Tier A).
+dependencies = [
+    "numpy==2.5.1",
+    "pandas==3.0.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest==9.1.1",
+    "ruff==0.16.0",
+    "mypy==2.3.0",
+    "pandas-stubs==3.0.3.260530",
+]
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+pythonpath = ["src", "."]
+# -q keeps output pristine; strict markers/config surface typos as errors
+# rather than silently doing nothing.
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = ["error"]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "tests"]
+# Vendored tooling. Not this project's code, and `ruff format` will happily
+# reformat Python fenced in third-party markdown if allowed to walk it.
+extend-exclude = [".claude", ".venv"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
+    "C4",     # flake8-comprehensions
+    "PT",     # flake8-pytest-style
+    "SIM",    # flake8-simplify
+    "PTH",    # flake8-use-pathlib
+    "RUF",    # ruff-specific
+    "ANN",    # flake8-annotations — type hints are mandatory (CLAUDE.md Style)
+    "D",      # pydocstyle
+]
+ignore = [
+    "D203",   # conflicts with D211
+    "D213",   # conflicts with D212
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Test *functions* carry their intent in their names; a mandated docstring on
+# each would be restated noise. Harness and fixture modules under tests/ are
+# library code and keep D103 — tests/causality.py is the enforcement point for
+# DATA_CONTRACT §1 and every public function in it must say what it enforces.
+"tests/**/test_*.py" = ["D100", "D103", "D104"]
+"tests/**" = ["D100", "D104"]
+
+# ---------------------------------------------------------------------------
+# mypy — strict
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_unimported = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_reexport = true
+strict_equality = true
+enable_error_code = [
+    "redundant-expr",
+    "truthy-bool",
+    "ignore-without-code",
+    "possibly-undefined",
+]
