@@ -139,6 +139,11 @@ answer to them may change.
 | Change agent weights | Hypothesis + n ≥ 100 per agent + shrinkage rule |
 | Touch the sealed holdout | Explicit sign-off. Budget-tracked. See `EVALUATION.md` §8. |
 | Relax a kill criterion | Not permitted. Kill criteria are immutable for the project's life. |
+| Change a threshold, metric, baseline, or label definition | Hypothesis required |
+| Clarify, define, or restate procedure without changing what counts as a result | No hypothesis; note the rationale in the commit |
+
+The test is effect, not location. If the edit could change whether a past or future run
+counts as a pass, it needs a hypothesis. `EVALUATION.md` §1 remains immutable regardless.
 
 ---
 
