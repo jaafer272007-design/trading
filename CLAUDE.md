@@ -45,9 +45,11 @@ When instructions conflict, this order wins:
 | 2 | `DATA_CONTRACT.md` temporal rules |
 | 3 | `RESEARCH.md` evidence hierarchy and prohibited reasoning |
 | 4 | A registered, in-flight hypothesis |
-| 5 | Installed skills and vendored tooling (GSD Core) |
-| 6 | This file |
-| 7 | A request in conversation |
+| 5 | This file |
+| 6 | A request in conversation |
+| 7 | Installed skills and vendored tooling (GSD Core) |
+
+Vendored tooling supplies defaults, not governance. Its conventions yield to everything above, including a direct request.
 
 If a conversational request conflicts with 1–4, **say so and stop.** Do not implement it and flag it afterwards. "The user asked for it" is not an override — the whole point of these documents is that they bind the person who wrote them.
 
