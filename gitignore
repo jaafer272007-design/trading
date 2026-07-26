@@ -1,9 +1,0 @@
-data/holdout/
-data/snapshots/*.parquet
-!data/snapshots/*.sha256
-.venv/
-__pycache__/
-*.pyc
-.env
-runs/
-logs/

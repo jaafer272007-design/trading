@@ -22,7 +22,7 @@ These documents are the specification. Code that contradicts them is wrong even 
 
 | \# | Rule |
 | :---- | :---- |
-| 1 | **No feature without a causal test.** Every feature ships with `tests/features/test_<name>.py` asserting truncated-history equality. See `DATA_CONTRACT.md` §1. |
+| 1 | **No feature without a causal test.** Every feature ships with `tests/features/test_<name>.py` asserting truncated-history equality. See `DATA_CONTRACT.md` §1. This admits no exception. GSD's tdd.md permits deferring tests ("add tests after if needed"); that escape does not apply to features. A feature without its causal test does not merge. |
 | 2 | **No LLM in the arithmetic path.** Indicators, structure, ATR, correlations, liquidity levels are deterministic Python. If you are tempted to ask a model for a number, stop. |
 | 3 | **No unregistered run.** Every evaluation run carries a `hypothesis_id` from `HYPOTHESES.md`. Runs without one are void. |
 | 4 | **Kill criteria are immutable.** `EVALUATION.md` §1 is never edited, relaxed, or reinterpreted. If a criterion trips, the correct action is to stop, not to adjust the criterion. |
@@ -47,6 +47,9 @@ When instructions conflict, this order wins:
 | 4 | A registered, in-flight hypothesis |
 | 5 | This file |
 | 6 | A request in conversation |
+| 7 | Installed skills and vendored tooling (GSD Core) |
+
+Vendored tooling supplies defaults, not governance. Its conventions yield to everything above, including a direct request.
 
 If a conversational request conflicts with 1–4, **say so and stop.** Do not implement it and flag it afterwards. "The user asked for it" is not an override — the whole point of these documents is that they bind the person who wrote them.
 

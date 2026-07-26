@@ -192,6 +192,10 @@ For each component: remove it, re-run the full evaluation, report the delta with
 - Openings remaining is displayed in every evaluation report header.
 - After the third opening, the holdout is exhausted and no further claim of out-of-sample
   validity can be made from it.
+- The holdout lives outside the repository working tree. The repo stores only its
+  SHA-256. Tooling-level path denial is not attempted: Claude Code permissions match
+  command prefixes, not file paths, so any deny list would be porous. Physical
+  separation is the control.
 
 ---
 

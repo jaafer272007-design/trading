@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  # REPRODUCIBILITY.md §4 — reduction order depends on thread
+  # count; a last-bit difference surfaces as a false K-2 halt.
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  NUMEXPR_NUM_THREADS: "1"
+  PYTHONHASHSEED: "0"
+
+jobs:
+  tier1:
+    name: Tier 1 — deterministic gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv python install 3.12
+      - run: uv sync --locked
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy --strict
+
+      # DATA_CONTRACT.md §1 — K-2 hard gate
+      - name: Causal feature test (K-2)
+        run: uv run pytest tests/test_causality.py tests/features
+
+      - name: Full suite
+        run: uv run pytest
+
+      - name: Determinism — second run must match
+        run: uv run pytest
+
+      # Not built yet — REPRODUCIBILITY.md §6 steps 4-6:
+      #   purge/embargo, shuffled labels (K-1), random baseline (K-4)
+      # Added with H-001 and H-003.
