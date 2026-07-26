@@ -11,10 +11,15 @@
 > makes.
 
 ```
-Total hypotheses registered ......... N = 4
+Registered (registry completeness) ... 4
   ├─ Accepted ....................... 0
   ├─ Rejected ....................... 0
-  └─ In flight ...................... 4
+  ├─ Standing ....................... 1
+  └─ In flight ...................... 3
+
+N_claims (multiple-testing denom.) ... N = 2
+  ├─ gates  (not counted) ........... 2   H-001, H-002
+  └─ claims (counted) ............... 2   H-003, H-004
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
@@ -22,9 +27,33 @@ FDR correction level ................ α = 0.05, Benjamini–Hochberg
 
 In flight = status REGISTERED or RUNNING.
 
-**`N` is the denominator for every significance claim in this project.** It is passed to
-the Deflated Sharpe Ratio and the BH-FDR procedure. Rejected hypotheses count. Abandoned
-hypotheses count. This is the entire reason the registry exists.
+### Gate vs. claim
+
+Every hypothesis is classified as exactly one of:
+
+- **gate** — a validity or correctness condition. Asks "is the machinery sound?" A gate
+  has no favourable outcome to shop for: it passes or the pipeline halts. Gates are not
+  edge-seeking, cannot manufacture a false positive about profitability, and therefore do
+  **not** count toward `N_claims`.
+- **claim** — an edge-seeking assertion. Asks "does this work?" Every claim is a draw
+  against the multiple-testing budget whether it is accepted, rejected, or abandoned.
+
+**Only claims count toward `N_claims`.** That number, not the registered total, is the
+denominator fed to the Deflated Sharpe Ratio and the Benjamini–Hochberg FDR procedure.
+Counting gates would inflate the denominator with tests that cannot produce a false
+positive about edge, making the correction conservative in a way that hides real failures
+rather than guarding against them.
+
+`Registered` remains the registry-completeness count and never decreases. Rejected
+hypotheses count. Abandoned hypotheses count. Nothing is ever removed.
+
+### Statuses
+
+`REGISTERED` · `RUNNING` · `ACCEPTED` · `REJECTED` · `VOID` · `STANDING`
+
+**`STANDING`** is for a claim enforced continuously by CI rather than answered once by a
+single run. A standing hypothesis has no terminal verdict: it is asserted on every commit,
+and the day it fails is the day the pipeline halts. Only gates may be `STANDING`.
 
 ---
 
@@ -116,25 +145,102 @@ phase.
 
 ### H-001 — Pipeline integrity under shuffled labels
 - **Registered:** 2026-07-26 14:32 UTC
+- **Operationalisation amended:** 2026-07-26 (before any run; see §2 rule 1)
+- **Class:** gate — does not count toward `N_claims`
 - **Status:** REGISTERED
 
 **Claim**
-> With labels randomly permuted, the full pipeline will show measured edge inside the 95%
-> interval of the null distribution across ≥ 30 seeds.
+> With labels randomly permuted, the deterministic path (features → combiner) will show no
+> measured edge across the 30 enumerated seeds.
 
-**Primary metric & threshold**
-> Measured BSS on shuffled labels within null 95% CI. Any edge = FAIL.
+**Resolution of an ambiguity in `EVALUATION.md` §5.1**
+
+> §5.1 as originally written said the "measured edge falls **inside** the null
+> distribution's 95% interval," where the null distribution is itself built from the ≥ 30
+> shuffled-label seeds. That is circular: the shuffled BSS is trivially inside its own
+> interval, so the condition can never fail and the gate can never fire.
+>
+> The reading with force, adopted here and mirrored into §5.1: **under permuted labels the
+> true skill is exactly zero, so the distribution of shuffled BSS must itself be centred at
+> or below zero.** Out-of-sample BSS should be slightly *negative* — a model fit on noise
+> can only overfit, and overfitting costs skill. A shuffled-BSS distribution sitting
+> materially above zero is the leak signature.
+
+**Primary metric**
+> Per seed `s`, `BSS_s = 1 − BS_model,s / BS_ref,s`, computed on out-of-sample predictions
+> pooled across all walk-forward folds. `BS_ref,s` is the base rate (climatology) of the
+> **shuffled** labels over the same pooled evaluation window, per `EVALUATION.md` §3.2.
+
+**Pass conditions — all three must hold**
+
+| # | Condition | Threshold |
+|---|---|---|
+| i | Upper bound of the 95% percentile-bootstrap CI of mean `BSS` | ≤ **0.01** |
+| ii | `max_s BSS_s` | ≤ **0.05** |
+| iii | median `BSS_s` | ≤ **0** |
+
+> Bootstrap uses seed 1337 (`REPRODUCIBILITY.md` §3) with 10,000 resamples over the 30
+> per-seed `BSS` values. Any failure = **K-1**.
+
+**Registered researcher degree of freedom — ε = 0.01**
+
+> Condition (i) is an equivalence-style bound, not a test of `E[BSS] = 0`. A strict
+> one-sided test against zero is hypersensitive: with 30 seeds and low variance, a
+> numerically meaningless bias of +0.0001 produces a large t-statistic and a spurious
+> halt. ε = 0.01 is a materiality floor — one fifth of K-3's 0.05 skill threshold — below
+> which "edge" is not a coherent claim.
+>
+> **ε is a judgement call.** It is recorded here, before any run, precisely so it cannot be
+> chosen after seeing the numbers (`RESEARCH.md` §5.3). Changing it requires a new
+> hypothesis ID.
+
+**Seeds**
+> The 30 enumerated seeds `0…29` from `REPRODUCIBILITY.md` §3 (`shuffled_labels`).
+> Enumerated, not generated.
+
+**Label**
+> `direction_24`: `1` if `close[T+24] > close[T]`, else `0`. Strict inequality; ties resolve
+> to `0` and the tie rate is reported. Horizon fixed at 24 bars **before** the run — trying
+> h1/h4/h24 and keeping the best would be three hypotheses under `EVALUATION.md` §9 and
+> metric shopping under `RESEARCH.md` §5.3.
+
+**Fold geometry**
+> Expanding-window walk-forward, 5 folds. Purge and embargo per `EVALUATION.md` §5.2 with
+> `H = 24`: training samples whose label window `[T, T+24]` reaches the test window are
+> dropped (purge); a 24-bar buffer following each test window is excluded from later
+> training (embargo). Evaluation decisions are spaced 24 bars apart (non-overlapping)
+> within each test fold, so the reported `n` counts effectively independent decisions
+> rather than 24× overlapping restatements of the same bet.
+
+**Estimator**
+> Hand-rolled logistic regression, fixed iteration count, no `scikit-learn`. Ships with a
+> capability test: given the label itself as a feature it must reach near-perfect BSS. A
+> combiner that cannot detect a planted leak cannot be trusted to report its absence.
+
+**Scope of the deterministic path**
+> Features → combiner, per the `REPRODUCIBILITY.md` §6 practical note ("run the
+> shuffled-labels gate on the deterministic path (features → stacker), not the full LLM
+> path"). No agents, no LLM. An LLM in the shuffling loop would add non-determinism to the
+> exact test that measures noise.
 
 **Pre-committed interpretation**
 > - PASS: proceed to H-002.
 > - FAIL: **K-1 halt.** Full leakage audit. No other work proceeds.
+
+**Data requirement**
+> A verdict on H-001 requires real market data. Runs against `src/data/synthetic.py` are
+> `run_type: harness_validation`, carry `hypothesis_id: null`, and **may never be cited as
+> evidence for H-001**. Synthetic bars have no vintages, no revisions, no session
+> boundaries, no DST, no gaps and no missing bars, so they cannot exercise the
+> `DATA_CONTRACT.md` §3/§4/§6 hazards that a real ingestion layer introduces.
 
 ---
 
 ### H-002 — Temporal causality of all features
 
 - **Registered:** 2026-07-26 14:32 UTC
-- **Status:** REGISTERED
+- **Class:** gate — does not count toward `N_claims`
+- **Status:** STANDING
 
 **Claim**
 > Every feature recomputed on data truncated at bar `T` will be bit-identical to its value
@@ -146,11 +252,27 @@ phase.
 **Pre-committed interpretation**
 > - FAIL: **K-2 halt.** The failing feature is disabled until fixed.
 
+--- STANDING ---
+
+- **Enforced by:** `tests/test_causality.py` (registry-wide sweep) and
+  `tests/features/test_<name>.py` (per feature, `CLAUDE.md` Hard Rule 1).
+- **Gate:** `.github/workflows/ci.yml`, step "Causal feature test (K-2)" — runs on every
+  push and pull request. Also enforced locally by `hooks/pre-push`.
+- **Why STANDING and not ACCEPTED:** this claim is not answered once. It is asserted on
+  every commit against whatever the feature registry contains at that commit, and it must
+  be re-asserted every time a feature is added. `tests/test_causality.py` fails the build
+  if a module under `src/features/` is absent from `FEATURE_REGISTRY`, so the sweep cannot
+  silently narrow. An `ACCEPTED` verdict would freeze a result that is only true of the
+  feature set at the moment it was recorded.
+- **Current scope:** every module in `src/features/`. The day this fails is the day the
+  pipeline halts under K-2.
+
 ---
 
 ### H-003 — Signal beats random entry
 
 - **Registered:** 2026-07-26 14:32 UTC
+- **Class:** claim — counts toward `N_claims`
 - **Status:** REGISTERED
 
 **Claim**
@@ -171,6 +293,7 @@ phase.
 ### H-004 — LLM synthesis vs. deterministic combination (SC-1)
 
 - **Registered:** 2026-07-26 14:32 UTC
+- **Class:** claim — counts toward `N_claims`
 - **Status:** REGISTERED
 
 **Claim**
