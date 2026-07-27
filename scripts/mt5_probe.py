@@ -1092,8 +1092,9 @@ def daily_break_samples(rates: Any, dense_years: set[int]) -> list[tuple[date, i
 
     This is the highest-powered anchor available and the reason it exists.
     The weekly open supplies one observation per week; the daily rollover
-    break supplies one per trading day — roughly five times the sample — and
-    unlike the open it does not depend on a Sunday-evening bar being present.
+    break supplies one per trading day — about twice the sample on this feed,
+    1,055 against 529 — and unlike the open it does not depend on a
+    Sunday-evening bar being present.
     A break is visible as the *absence* of a bar between two present ones, so
     thin liquidity at the boundary cannot hide it: absence is the signal.
 
@@ -1221,14 +1222,46 @@ def report_anchor_fingerprints(rates: Any, dense_years: set[int]) -> None:
     - **Weekly close.** Friday's last bar. Liquidity at the weekly close is
       not thin, and a missing bar there is rare.
     - **Daily session break.** The rollover hour, visible as an absence
-      between two present bars, once per trading day. Roughly five times the
-      sample of the weekly open, and immune to the failure mode above
-      because absence *is* the signal rather than something that can go
-      missing.
+      between two present bars, once per trading day. About twice the
+      sample of the weekly open on this feed, and immune to the failure
+      mode above because absence *is* the signal rather than something
+      that can go missing.
 
-    All three are anchored to the same New York local time, so all three must
-    give the same answer. Agreement is the verdict; disagreement means the
-    anchor-specific noise has not been understood and no rule may be frozen.
+    Adjudication rule — fixed in advance, and **sample size never breaks a
+    tie**
+    ------------------------------------------------------------------------
+
+    All three anchors are pinned to the same New York local time, so all three
+    must give the same answer. The rule for combining them is stated here in
+    full because the alternative — deciding after seeing which anchor won — is
+    the same class of error as choosing a metric post-hoc, and this instrument
+    has already produced four different answers from the same history.
+
+    1. Each anchor independently returns ``US RULE``, ``EU RULE``,
+       ``FIXED OFFSET`` or ``UNDETERMINED``.
+    2. An anchor returns ``UNDETERMINED`` if a bucket it needs is below
+       ``MIN_BUCKET_PURITY``, a matched-season bucket is empty, or the
+       mismatch bucket holds fewer than ``MIN_WEEKS_PER_BUCKET``
+       observations. Those thresholds are constants, set before any run.
+    3. ``UNDETERMINED`` anchors are **excluded from the vote**. They are not
+       evidence for a rule and not evidence against one.
+    4. If every remaining anchor agrees, that is the verdict.
+    5. **If any two usable anchors disagree, the verdict is UNDETERMINED,
+       whatever their sample sizes.** The larger ``n`` does not win. It never
+       wins.
+
+    Rule 5 is the load-bearing one. ``n`` measures precision, not validity: if
+    two anchors tied to the same instant give different answers, at least one
+    of them is not measuring the server clock, and more observations of a
+    mis-specified anchor make it more confidently wrong rather than more
+    right. A rule that let the biggest sample settle it would return an answer
+    from every possible input, which is the property a gate must not have.
+
+    Rule 3 is not a loophole in rule 5. An anchor is excluded for failing a
+    purity threshold fixed in advance, never for being small or for
+    disagreeing. A bucket split 95 to 94 has no reading with which to
+    contradict anything; that is a different thing from a reading that
+    conflicts.
 
     Args:
         rates: Full H1 rate array.
