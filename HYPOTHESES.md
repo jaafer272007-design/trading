@@ -12,10 +12,10 @@
 
 ```
 Registered (registry completeness) ... 6
-  ├─ Accepted ....................... 0
+  ├─ Accepted ....................... 1   H-001 (K-1 does not trip, 2026-07-27)
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 5
+  └─ In flight ...................... 4
 
 N_claims (multiple-testing denom.) ... N = 2
   ├─ gates  (not counted) ........... 4   H-001, H-002, H-005, H-006
@@ -147,8 +147,9 @@ phase.
 - **Registered:** 2026-07-26 14:32 UTC
 - **Operationalisation amended:** 2026-07-26 (before any run; see §2 rule 1)
 - **Fold geometry amended:** 2026-07-27 (before any run — `FIRST_TEST_FRACTION = 0.50`)
+- **Executed:** 2026-07-27 on real market data
 - **Class:** gate — does not count toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** ACCEPTED — K-1 does not trip
 
 **Claim**
 > With labels randomly permuted, the deterministic path (features → combiner) will show no
@@ -332,6 +333,104 @@ phase.
 **Pre-committed interpretation**
 > - PASS: proceed to H-002.
 > - FAIL: **K-1 halt.** Full leakage audit. No other work proceeds.
+
+--- RUN ---
+
+- **Run manifest:** `runs/8838059a-56eb-43dd-b643-e4ccfc0f79b3.json`
+  sha256 `b6daca9ac1eb977fa8300f2ef78c742fa4be1d5c8e8aa274ecd6ce7586534c48`
+- **run_id:** `8838059a-56eb-43dd-b643-e4ccfc0f79b3`
+- **Executed:** 2026-07-27, commit `ae33621`, `git_dirty: false`
+- **Registration precedes the run:** geometry amendment committed `43dafa2` at
+  2026-07-27T22:11:44Z, merged to main as `a0dda23`. §2 rule 1 satisfied.
+- **Data:** `GOLD-H1-20080311-20260727.csv`, derived snapshot
+  `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`.
+  65,395 in-window bars, 64,886 eligible, 1,364 pooled decisions.
+- **Verdict:** **ACCEPTED — K-1 does not trip.**
+
+**Result — the null distribution, 30 seeds, 1,364 decisions each**
+
+> ```
+> s2  -0.002799  s25 -0.002566  s19 -0.002184  s13 -0.002170  s22 -0.001826  s5  -0.001379
+> s29 -0.001318  s11 -0.001262  s21 -0.001203  s12 -0.001031  s28 -0.000844  s7  -0.000822
+> s8  -0.000782  s15 -0.000762  s10 -0.000744  s20 -0.000724  s6  -0.000631  s3  -0.000609
+> s17 -0.000507  s0  -0.000504  s23 -0.000443  s14 -0.000429  s26 -0.000315  s18 -0.000291
+> s9  -0.000229  s24 -0.000140  s16 -0.000121  s1  +0.000033  s27 +0.000202  s4  +0.000757
+> ```
+>
+> min −0.002799 · max +0.000757 · sd 0.000815 · 3 of 30 seeds above zero
+>
+> The distribution sits where §5.1 says it must under permuted labels: centred
+> slightly below zero, because a model fit on noise can only overfit and
+> overfitting costs skill. The three positive seeds are two and three orders of
+> magnitude below ε.
+
+**Pass conditions — measured**
+
+> | # | Condition | Threshold | Measured | |
+> |---|---|---|---|---|
+> | i | 95% bootstrap CI upper bound of mean BSS | ≤ 0.01 | **−0.000577** | pass |
+> | ii | `max_s BSS_s` | ≤ 0.05 | **+0.000757** | pass |
+> | iii | median `BSS_s` | ≤ 0 | **−0.000734** | pass |
+>
+> mean BSS −0.000855, 95% CI [−0.001156, −0.000577], bootstrap seed 1337,
+> 10,000 resamples. All three hold. **K-1 does not trip.**
+
+**Unshuffled control — reported alongside, not part of the verdict**
+
+> Same pipeline, same folds, true labels: **BSS = −0.006766** on n = 1,364.
+>
+> **It is worse than the shuffled null**, by roughly 8× the null's mean. That is
+> stated because it is what happened, not explained away: this three-feature
+> combiner extracts nothing directional at H = 24 on this data, and fitting real
+> labels costs more out-of-sample than fitting noise does — a spurious in-sample
+> relationship that does not survive the fold boundary.
+>
+> This is **not** a K-3 result. K-3 lives on the sealed holdout, which has not
+> been opened, and no cost model, baseline ladder, or random-entry comparison
+> (H-003) has run. It is not evidence for or against any edge claim and must not
+> be cited as one. It is recorded here because a shuffled-label null is
+> uninterpretable without knowing what the same machinery does on real labels.
+
+**Leak fixtures — both trip, as required**
+
+> | fixture | mean BSS | max | outcome |
+> |---|---|---|---|
+> | `label_in_features` | +0.999984 | +0.999984 | **TRIPPED** |
+> | `target_encoding_on_all` | +0.247319 | +0.277759 | **TRIPPED** |
+>
+> The gate is demonstrably capable of firing on this data, this geometry, and
+> this combiner. Without these the verdict above would be a statement about the
+> estimator's weakness rather than the pipeline's integrity.
+
+**K-1 sensitivity at this capacity**
+
+> Combiner fingerprint `9b09e2482278a57a…`, 4 parameters (3 features +
+> intercept). Baseline run `5c6c585b-7531-48bd-945c-8c077b759a05` at commit
+> `7d6ed38b` — synthetic, `harness_validation`, never evidence for H-001.
+>
+> | mode | recorded mean BSS | trips at 4 params |
+> |---|---|---|
+> | `label_in_features` | +0.999984 | yes |
+> | `target_encoding_on_all` | +0.239781 | yes |
+> | `train_test_overlap` | −0.000901 | **no** |
+> | `scaler_fit_on_all` | −0.001390 | **no** |
+>
+> `train_test_overlap` is a genuine leak that a four-parameter linear combiner
+> lacks the capacity to exploit. **This pass therefore certifies that no label
+> reaches the model. It does not certify the absence of all leakage**, and the
+> standing-limitation clause below enumerates what it misses.
+
+**Notes**
+
+> Fold 1's test window straddles the 2022-10-21 session-era boundary, and folds
+> 2–4 train on predominantly pre-2022 pools while testing entirely after it.
+> Under permuted labels that cannot affect the measurement — there is no signal
+> to be regime-dependent about — but it is the geometry a later skill claim
+> would inherit, and it is recorded in the amendment above rather than left to
+> be rediscovered.
+>
+> Embargo removed 0 training bars beyond purge. Expected under forward-only
+> tiling and reported rather than listed as an applied control.
 
 **Data requirement**
 > A verdict on H-001 requires real market data. Runs against `src/data/synthetic.py` are
