@@ -121,22 +121,61 @@ def classify_gap(
     if holiday is not None:
         if missing >= HOLIDAY_MIN_MISSING_BARS:
             return GapCause.HOLIDAY
-        # The session ended early and picked up on schedule: the gap swallows
-        # the rollover hour rather than sitting inside an open session.
-        break_hour = calendar.break_hour(before.date())
-        covers_break = any(
-            ((before + pd.Timedelta(hours=k)).hour == break_hour)
-            for k in range(1, missing + 1)
-        )
-        if covers_break:
+        if _resumes_on_schedule(before, after, missing, calendar):
             return GapCause.EARLY_CLOSE
 
-    if missing >= HOLIDAY_MIN_MISSING_BARS:
-        # Long, and no holiday explains it. Not a defect we can attribute, and
-        # not something to call a holiday because of its size alone.
-        return GapCause.UNKNOWN
-
+    # Long, and no holiday explains it. Not a defect we can attribute, and not
+    # something to call a holiday because of its size alone.
     return GapCause.UNKNOWN
+
+
+def _resumes_on_schedule(
+    before: pd.Timestamp, after: pd.Timestamp, missing: int, calendar: MarketCalendar
+) -> bool:
+    """Whether a holiday-adjacent gap ends where the next session normally starts.
+
+    This is what separates an early close from a hole. An early close ends the
+    session sooner than usual and the market comes back at its ordinary time;
+    a defect leaves a hole that resumes at an arbitrary hour.
+
+    Two shapes, because the feed has two session structures
+    ------------------------------------------------------
+
+    In a **break era** the day ends, the break hour passes, and trading
+    resumes after it. The gap therefore swallows the break hour, and finding
+    that hour inside the gap is the test.
+
+    In the **no-break era** (2017-10-07 to 2022-10-20) there is no break hour
+    to swallow. The session simply runs to the next day's start, so the gap
+    ends at the hour the day would have rolled over anyway — the hour the
+    break *would* occupy.
+
+    The first version of this function only implemented the first shape, which
+    is why 35 of the 36 gaps it could not name were holiday early closes in
+    the no-break era: MLK, Presidents' Day, Memorial Day, Independence Day,
+    Labor Day, Thanksgiving, Christmas and New Year, 2017 through 2022. They
+    were being counted as defects and invalidating their neighbouring bars.
+
+    Args:
+        before: Last bar before the gap, in server time.
+        after: First bar after it, in server time.
+        missing: How many hourly bars are absent.
+        calendar: The frozen calendar.
+
+    Returns:
+        True if the resumption is on schedule.
+    """
+    break_hour = calendar.break_hour(before.date())
+    covers_break = any(
+        ((before + pd.Timedelta(hours=k)).hour == break_hour)
+        for k in range(1, missing + 1)
+    )
+    if covers_break:
+        return True
+    # Resumes exactly where the break would have handed back over. Checked
+    # against the hour AFTER the break, since the break hour itself carries no
+    # bar in a break era and is the first bar of the day in a no-break one.
+    return after.hour in {break_hour, (break_hour + 1) % 24}
 
 
 Gap = tuple[pd.Timestamp, pd.Timestamp, int, GapCause]

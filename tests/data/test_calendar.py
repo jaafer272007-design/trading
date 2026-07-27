@@ -134,6 +134,8 @@ MINIMAL = """\
     session:
       daily_break_hour: {{matched: {bm}, mismatch: {bx}}}
       weekly_close_hour: {{matched: {cm}, mismatch: {cx}}}
+      eras:
+{eras}
     window: {{start: 2015-09-11}}
     holidays:
       - {{date: 2016-07-04, name: "Independence Day"}}
@@ -149,6 +151,10 @@ def _calendar_text(**kwargs: object) -> str:
         "bx": 23,
         "cm": 23,
         "cx": 22,
+        "eras": (
+            '        - {start: 2015-09-11, daily_break: true, note: "a"}\n'
+            '        - {start: 2017-10-07, daily_break: false, note: "b"}'
+        ),
     }
     return MINIMAL.format(**{**defaults, **kwargs})
 
@@ -225,3 +231,99 @@ def test_rejects_duplicate_holiday(tmp_path: Path) -> None:
     body = _calendar_text() + '      - {date: 2016-07-04, name: "dup"}\n'
     with pytest.raises(CalendarError, match="twice"):
         load_calendar(_write(tmp_path, body))
+
+
+# ---------------------------------------------------------------------------
+# Session eras
+#
+# The calendar gained these after the first ingest of the full H1 export
+# showed the daily break absent between 2017-10-07 and 2022-10-20. A single
+# `daily_break_hour` had been generalising over a structure the feed does not
+# have, and the boundaries sit inside H-006's evaluation window.
+# ---------------------------------------------------------------------------
+
+
+def test_eras_are_required(tmp_path: Path) -> None:
+    """A calendar with no eras claims a uniformity the feed does not have."""
+    body = _calendar_text()
+    stripped = "\n".join(
+        line
+        for line in body.splitlines()
+        if "daily_break:" not in line and line.strip() != "eras:"
+    )
+    with pytest.raises(CalendarError, match="eras"):
+        load_calendar(_write(tmp_path, stripped + "\n"))
+
+
+def test_rejects_out_of_order_eras(tmp_path: Path) -> None:
+    """era_for scans linearly; unordered starts would silently misassign days."""
+    with pytest.raises(CalendarError, match="strictly increase"):
+        load_calendar(
+            _write(
+                tmp_path,
+                _calendar_text(
+                    eras=(
+                        '        - {start: 2017-10-07, daily_break: false, note: "b"}\n'
+                        '        - {start: 2015-09-11, daily_break: true, note: "a"}'
+                    )
+                ),
+            )
+        )
+
+
+def test_rejects_an_era_boundary_that_changes_nothing(tmp_path: Path) -> None:
+    """Two adjacent eras with the same structure is a typo or a missing field."""
+    with pytest.raises(CalendarError, match="same daily_break"):
+        load_calendar(
+            _write(
+                tmp_path,
+                _calendar_text(
+                    eras=(
+                        '        - {start: 2015-09-11, daily_break: true, note: "a"}\n'
+                        '        - {start: 2017-10-07, daily_break: true, note: "b"}'
+                    )
+                ),
+            )
+        )
+
+
+def test_rejects_a_first_era_starting_after_the_window(tmp_path: Path) -> None:
+    """Every in-window bar must fall in a declared era."""
+    with pytest.raises(CalendarError, match="after window_start"):
+        load_calendar(
+            _write(
+                tmp_path,
+                _calendar_text(
+                    eras=(
+                        '        - {start: 2016-01-01, daily_break: true, note: "a"}\n'
+                        '        - {start: 2017-10-07, daily_break: false, note: "b"}'
+                    )
+                ),
+            )
+        )
+
+
+def test_the_real_calendar_declares_the_three_measured_eras() -> None:
+    """Pinned against the measurement in scripts/report_session_eras.py."""
+    cal = load_calendar()
+    assert [(e.start.isoformat(), e.daily_break) for e in cal.eras] == [
+        ("2015-09-11", True),
+        ("2017-10-07", False),
+        ("2022-10-21", True),
+    ]
+
+
+def test_era_lookup_puts_the_boundary_days_on_the_right_side() -> None:
+    """The dates the measurement actually pinned, not approximations of them."""
+    cal = load_calendar()
+    assert cal.has_daily_break(date(2017, 10, 6)) is True  # last 23-bar day
+    assert cal.has_daily_break(date(2017, 10, 9)) is False  # first 24-bar day
+    assert cal.has_daily_break(date(2022, 10, 20)) is False  # last 24-bar day
+    assert cal.has_daily_break(date(2022, 10, 21)) is True  # first 23-bar day
+
+
+def test_dates_before_every_era_claim_nothing() -> None:
+    """The sparse era predates the declaration and the question does not arise."""
+    cal = load_calendar()
+    assert cal.era_for(date(2010, 1, 1)) is None
+    assert cal.has_daily_break(date(2010, 1, 1)) is False

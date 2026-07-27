@@ -81,11 +81,63 @@ clock:
 # calendars agree. [MEASURED] probe §5 and §6b.
 session:
   daily_break_hour:
-    matched: 0                      # the bar that is absent every trading day
-    mismatch: 23
+    matched: 0                      # the hour whose bar is absent, when there
+    mismatch: 23                    # is a break at all — see `eras` below
   weekly_close_hour:
     matched: 23                     # last bar of the trading week
     mismatch: 22
+
+  # -------------------------------------------------------------------------
+  # THE BREAK IS NOT PRESENT THROUGHOUT. This block was added after the first
+  # ingest of the full H1 export and it corrects an earlier over-generalisation.
+  # -------------------------------------------------------------------------
+  #
+  # [MEASURED] scripts/report_session_eras.py over data/raw/GOLD-H1-20080311-
+  # 20260727.csv, in-window days only. The measurement is a bar count per
+  # server day, which needs no convention and no conversion:
+  #
+  #   Mon-Thu days carrying 24 bars (no whole-hour break) : 1,166
+  #   Mon-Thu days carrying 23 bars (a break)             : 1,536
+  #
+  # Those two populations do not interleave. They form three contiguous runs
+  # with boundaries falling on a single weekend each:
+  #
+  #   2015-09-11 .. 2017-10-06   break present      last break day Fri 10-06
+  #   2017-10-09 .. 2022-10-20   NO break           first 24-bar day Mon 10-09
+  #   2022-10-21 .. present      break present      first break day Fri 10-21
+  #
+  # Within the middle era, 68 Mon-Thu days still carry 23 bars. Every one of
+  # them falls in a US/EU daylight-saving mismatch week, and in every one the
+  # missing hour is 17:00 New York — the same hour the break occupies in the
+  # other two eras. That is stated here as an observation and not explained:
+  # this file records what the feed does, and a mechanism nobody has evidence
+  # for does not belong in it.
+  #
+  # WHY THIS MATTERS. H-006's window opens 2015-09-11, so the evaluation
+  # window spans all three eras. Any session-relative feature — hours since
+  # the open, position within the session, bars until the close — is not
+  # measuring the same thing on either side of 2017-10-07. Nothing in this
+  # repository currently computes one; when something does, this block is the
+  # reason it needs an era term or an era-restricted window.
+  #
+  # An era runs until the next era's `start`. Boundaries are declared on the
+  # Saturday where possible, so no bar can be assigned to the wrong era: there
+  # are no bars on a Saturday. The 2022 boundary is a Friday because the break
+  # genuinely reappeared mid-week, at the Thu->Fri rollover.
+  #
+  # REVIEW THIS AGAINST FxPro's OWN SESSION-HOURS ANNOUNCEMENTS, not against
+  # the feed. Deriving it from the feed and then checking it against the feed
+  # proves nothing, which is the same circularity the clock rule avoids.
+  eras:
+    - start: 2015-09-11             # window_start; the era began earlier
+      daily_break: true
+      note: "one-hour break at 17:00 New York"
+    - start: 2017-10-07             # Saturday; last break day was Fri 10-06
+      daily_break: false
+      note: "continuous 24h session; break returns only in DST mismatch weeks"
+    - start: 2022-10-21             # Friday; the break returned mid-week
+      daily_break: true
+      note: "one-hour break at 17:00 New York, as before 2017"
 
 # ---------------------------------------------------------------------------
 # Evaluation window — H-006, frozen 2026-07-27.
