@@ -62,7 +62,7 @@ from __future__ import annotations
 import platform
 import sys
 from collections import Counter
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from itertools import pairwise
 from typing import Any
 
@@ -86,6 +86,7 @@ PROBE_WINDOW_DAYS = 30
 TICK_PROBE_WINDOW_DAYS = 3
 SUSPICIOUS_GAPS_TO_LIST = 15
 HOLIDAY_MIN_MISSING_BARS = 20
+BREAK_HOUR_MIN_SHARE = 0.02
 SPREAD_SAMPLE_DAYS = (0, 90, 365, 730, 1095, 1460, 1825)
 
 WIDTH = 78
@@ -392,58 +393,266 @@ def report_depth(mt5: Any, symbol: str) -> dict[str, datetime | None]:
 
 
 # --------------------------------------------------------------------------
-# 2. Counts and observed bars-per-week
+# 2. Density — measured, never extrapolated
 # --------------------------------------------------------------------------
 
+DENSE_DAY_MIN_BARS = 20
 
-def report_counts(mt5: Any, symbol: str, earliest_h1: datetime | None) -> Any:
-    """Report total H1 bar count and bars actually observed per week.
+
+def fetch_all_h1(mt5: Any, symbol: str, earliest_h1: datetime | None) -> Any:
+    """Fetch the entire H1 series.
 
     Args:
         mt5: The MetaTrader5 module.
         symbol: Symbol string.
-        earliest_h1: Earliest H1 timestamp, from :func:`report_depth`.
+        earliest_h1: Earliest H1 timestamp.
 
     Returns:
-        The full H1 rate array, or ``None``.
+        The full rate array, or ``None``.
     """
-    header("2. VOLUME — H1 bar count and observed bars per week")
-
     if earliest_h1 is None:
-        print("  no H1 history — nothing to count")
         return None
-
     now = datetime.now(UTC).replace(tzinfo=None) + timedelta(days=1)
     rates = mt5.copy_rates_range(symbol, mt5.TIMEFRAME_H1, earliest_h1, now)
     if rates is None or len(rates) == 0:
-        print("  H1 range request returned nothing")
         return None
+    return rates
+
+
+def report_density(rates: Any) -> None:
+    """Report measured bar density per year, and the bars-per-day histogram.
+
+    An earlier version of this probe reported "total independent decisions"
+    as ``median_bars_per_week x 52 x span_years``. That is an extrapolation
+    presented as a measurement, and on a feed whose early history is sparse it
+    overstated the true count by 63%. Everything below is counted, and the two
+    figures that remain estimates are labelled as such.
+
+    Args:
+        rates: Full H1 rate array, or ``None``.
+    """
+    header("2. DENSITY — measured bar counts (nothing here is extrapolated)")
+
+    if rates is None or len(rates) == 0:
+        print("  no H1 history — nothing to count")
+        return
 
     times = [to_naive(r["time"]) for r in rates]
-    row("total H1 bars", f"{len(times):,}")
+    row("total H1 bars [MEASURED]", f"{len(times):,}")
     row("first bar (server time)", fmt_time(times[0]))
     row("last bar (server time)", fmt_time(times[-1]))
-    span_years = (times[-1] - times[0]).days / 365.25
-    row("span", f"{span_years:.2f} years")
+    row("span", f"{(times[-1] - times[0]).days / 365.25:.2f} years")
+    print()
+    row("=> decisions at H=24 [MEASURED]", f"{len(times) // 24:,}")
+    note("Total bars divided by 24. This is the real ceiling on")
+    note("non-overlapping decisions. K-6 needs >= 150 per window.")
+
+    # ---- per-year table -------------------------------------------------
+    per_day: Counter[Any] = Counter(t.date() for t in times)
+    per_year: Counter[int] = Counter(t.year for t in times)
+    days_by_year: dict[int, list[int]] = {}
+    for day, count in per_day.items():
+        days_by_year.setdefault(day.year, []).append(count)
+
+    print()
+    print("  Bars per calendar year — all MEASURED")
+    print()
+    print("      year      bars    days   dense   dense%   med bars/day")
+    print("      " + "-" * 58)
+    for year in sorted(per_year):
+        counts = days_by_year.get(year, [])
+        dense = sum(1 for c in counts if c >= DENSE_DAY_MIN_BARS)
+        pct = 100.0 * dense / len(counts) if counts else 0.0
+        med = sorted(counts)[len(counts) // 2] if counts else 0
+        print(
+            f"      {year}   {per_year[year]:>7,}   {len(counts):>5}   "
+            f"{dense:>5}   {pct:>5.1f}%   {med:>12}"
+        )
+    total_days = sum(len(v) for v in days_by_year.values())
+    total_dense = sum(
+        1 for v in days_by_year.values() for c in v if c >= DENSE_DAY_MIN_BARS
+    )
+    print("      " + "-" * 58)
+    print(
+        f"      TOTAL  {len(times):>7,}   {total_days:>5}   {total_dense:>5}   "
+        f"{100.0 * total_dense / total_days if total_days else 0:>5.1f}%"
+    )
+    note(f"'dense' = a day carrying >= {DENSE_DAY_MIN_BARS} bars.")
+
+    # ---- bars-per-day histogram ----------------------------------------
+    print()
+    print("  Bars-per-day histogram — the shape of the history")
+    print()
+    hist = Counter(per_day.values())
+    print("      bars/day     days   share")
+    print("      " + "-" * 34)
+    for bars in sorted(hist):
+        share = 100.0 * hist[bars] / total_days
+        bar = "#" * int(share / 2)
+        print(f"      {bars:>8}   {hist[bars]:>6}   {share:>5.1f}%  {bar}")
+    note("A bimodal shape (a spike near 1 and another near 23-24) means")
+    note("the feed is sparse early and dense later — one span, two datasets.")
+
+
+def report_discrepancy(rates: Any, n_daily_breaks: int) -> None:
+    """Reconcile the daily-break count against the full-week count.
+
+    The previous run reported 1,078 daily session breaks and 535 full weeks.
+    535 full weeks implies roughly 2,675 dense days, and if every dense day
+    carried exactly one one-bar break there would be ~2,675 breaks. The two
+    numbers disagree by a factor of about 2.5, and that gap is not
+    interpretable from aggregates alone.
+
+    This function tests the candidate explanations against the data rather
+    than choosing between them by argument.
+
+    Args:
+        rates: Full H1 rate array, or ``None``.
+        n_daily_breaks: Daily-break count from the gap census.
+    """
+    header("2b. DISCREPANCY — daily breaks vs full weeks, reconciled")
+
+    if rates is None or len(rates) == 0:
+        print("  no H1 history")
+        return
+
+    times = [to_naive(r["time"]) for r in rates]
+    per_day: Counter[Any] = Counter(t.date() for t in times)
+    dense_days = [d for d, c in per_day.items() if c >= DENSE_DAY_MIN_BARS]
 
     per_week = Counter(t.isocalendar()[:2] for t in times)
-    counts = sorted(per_week.values())
-    if counts:
-        median = counts[len(counts) // 2]
-        full = [c for c in counts if c >= median * 0.9]
-        print()
-        row("weeks observed", len(counts))
-        row("bars/week  median", median)
-        row("bars/week  mean", f"{sum(counts) / len(counts):.1f}")
-        row("bars/week  min", counts[0])
-        row("bars/week  max", counts[-1])
-        row("full weeks (>=90% of median)", len(full))
-        note("Median is the honest figure — holidays drag the mean down.")
-        print()
-        row("=> decisions/year at H=24", f"{median * 52 / 24:.0f}")
-        note("Non-overlapping decisions. K-6 needs >= 150 per evaluation window.")
+    week_counts = sorted(per_week.values())
+    week_median = week_counts[len(week_counts) // 2] if week_counts else 0
+    n_full_weeks = sum(1 for c in week_counts if c >= week_median * 0.9)
 
-    return rates
+    row("daily breaks (gap census)", f"{n_daily_breaks:,}")
+    row("bars/week median [MEASURED]", f"{week_median:,}")
+    row("full weeks (>=90% median)", f"{n_full_weeks:,}")
+    row("dense days [MEASURED]", f"{len(dense_days):,}")
+    print()
+
+    # Candidate 1: many dense days simply have no break at all (24 bars).
+    full_24 = sum(1 for d in dense_days if per_day[d] == 24)
+    with_23 = sum(1 for d in dense_days if per_day[d] == 23)
+    other = len(dense_days) - full_24 - with_23
+    print("  Dense days by bar count — the population the breaks come from")
+    print()
+    row("exactly 24 bars (no break)", f"{full_24:,}")
+    row("exactly 23 bars (one break)", f"{with_23:,}")
+    row("some other count", f"{other:,}")
+    if full_24 > with_23:
+        note("Most dense days carry a full 24 bars, so most days have no")
+        note("session break at all. A break count far below the dense-day")
+        note("count is then the expected result, not an anomaly.")
+    else:
+        note("Most dense days are short of 24 bars, so a break on nearly")
+        note("every day is the expected result and a low break count is")
+        note("the thing needing explanation.")
+
+    # Candidate 2: the break hour moves, so breaks land at more than one hour.
+    print()
+    single_gap_hours: Counter[int] = Counter()
+    step = timedelta(hours=1)
+    for prev, nxt in pairwise(times):
+        if nxt - prev == step * 2:
+            single_gap_hours[prev.hour] += 1
+    total_single = sum(single_gap_hours.values())
+    if single_gap_hours:
+        print("  Hour-of-day distribution of every 1-bar gap [MEASURED]:")
+        ranked = sorted(single_gap_hours.items(), key=lambda kv: -kv[1])
+        for hour, count in ranked[:6]:
+            share = 100.0 * count / total_single
+            print(f"      server hour {hour:02d}   {count:>6,}   {share:>5.1f}%")
+        material = [
+            (h, c) for h, c in ranked if c >= BREAK_HOUR_MIN_SHARE * total_single
+        ]
+        covered = sum(c for _, c in material)
+        share = 100.0 * covered / total_single
+        if len(material) == 1:
+            note(f"A single hour carries {share:.1f}% of all 1-bar gaps, so the")
+            note("break does not move. Anything at another hour is a candidate")
+            note("defect rather than a session break.")
+        else:
+            hours_text = ", ".join(f"{h:02d}" for h, _ in material)
+            missed = total_single - ranked[0][1]
+            note(f"The break MOVES: hours {hours_text} each carry at least")
+            note(f"{BREAK_HOUR_MIN_SHARE:.0%} of 1-bar gaps, {share:.1f}% together.")
+            note("Keying the census on the modal hour alone would refile the")
+            note(f"remaining {missed:,} breaks as in-session holes.")
+
+    # Candidate 3: Friday breaks are absorbed into the weekend gap.
+    print()
+    fri_dense = sum(1 for d in dense_days if d.weekday() == 4)
+    fri_short = sum(1 for d in dense_days if d.weekday() == 4 and per_day[d] < 24)
+    row("dense Fridays", f"{fri_dense:,}")
+    row("  of which short of 24 bars", f"{fri_short:,}")
+    note("A Friday break falls at the weekly close and merges into the")
+    note("weekend gap, so it is never counted as a separate 1-bar gap.")
+
+    # The ledger. State the residual as a number rather than asserting that
+    # the three effects above are sufficient.
+    print()
+    print("  Reconciliation [MEASURED]")
+    print()
+    row("dense days", f"{len(dense_days):,}")
+    row("less: days with a full 24 bars", f"-{full_24:,}")
+    row("= days that should show a break", f"{len(dense_days) - full_24:,}")
+    row("less: dense Fridays short of 24", f"-{fri_short:,}")
+    row("= expected 1-bar gaps", f"{len(dense_days) - full_24 - fri_short:,}")
+    row("observed 1-bar gaps", f"{total_single:,}")
+    residual = total_single - (len(dense_days) - full_24 - fri_short)
+    row("RESIDUAL (observed - expected)", f"{residual:+,}")
+    print()
+    if residual == 0:
+        note("The residual is zero: the three effects account for the count")
+        note("exactly, and there is nothing left to explain.")
+    else:
+        note(f"A residual of {residual:+,} remains. It CANNOT be resolved from")
+        note("bar timestamps alone — separating a broker holiday schedule")
+        note("from a genuine hole needs the broker's own session calendar,")
+        note("which MT5 does not expose through this API. Ingestion must")
+        note("therefore treat these as unknown-cause and mark them invalid")
+        note("under DATA_CONTRACT §6 rather than classify them.")
+
+
+def report_spread_coverage(rates: Any) -> None:
+    """Report what fraction of bars carry a non-zero spread value, per year.
+
+    A zero may mean *unrecorded* rather than corrupt. "The field starts being
+    populated in year X" is a statement about recording depth, and it is
+    different from "the field is contaminated" — the previous run conflated
+    them by reporting only a global min of 0.
+
+    Args:
+        rates: Full H1 rate array, or ``None``.
+    """
+    header("2c. SPREAD FIELD — recording depth by year")
+
+    if rates is None or len(rates) == 0:
+        print("  no H1 history")
+        return
+
+    by_year: dict[int, list[int]] = {}
+    for r in rates:
+        by_year.setdefault(to_naive(r["time"]).year, []).append(int(r["spread"]))
+
+    print("      year      bars   non-zero   cover%    min    med    max")
+    print("      " + "-" * 60)
+    for year in sorted(by_year):
+        values = by_year[year]
+        nonzero = [v for v in values if v > 0]
+        cover = 100.0 * len(nonzero) / len(values)
+        med = sorted(nonzero)[len(nonzero) // 2] if nonzero else 0
+        print(
+            f"      {year}   {len(values):>7,}   {len(nonzero):>8,}   "
+            f"{cover:>5.1f}%   {min(values):>4}   {med:>4}   {max(values):>4}"
+        )
+    print()
+    note("Cover jumping from ~0% to ~100% in a given year means the broker")
+    note("began recording the field then — that is recording depth, not")
+    note("corruption. Cover that is high but patchy is a different problem.")
+    note("Either way EVALUATION.md §10 forbids using this as a cost input:")
+    note("it is the spread at bar-record time, not what you would have paid.")
 
 
 # --------------------------------------------------------------------------
@@ -510,6 +719,10 @@ def report_offset(mt5: Any, symbol: str, rates: Any) -> None:
     row("modal bars on Tue/Wed/Thu", modal)
     row("days at modal +/- 1 bar", len(anomalies))
     note("Candidate DST transition days — a shift makes one day 23h or 25h.")
+    note("This check is WEAK and finds nothing when transitions fall on a")
+    note("Sunday, which is where both the US and EU rules put them. A count")
+    note("of zero here is not evidence of a fixed clock. Section 6b is the")
+    note("authoritative test; this one only catches a midweek shift.")
     if anomalies:
         by_year: dict[int, list[str]] = {}
         for day in anomalies:
@@ -520,6 +733,343 @@ def report_offset(mt5: Any, symbol: str, rates: Any) -> None:
             print(f"      {year}: {shown}{f'  (+{more} more)' if more > 0 else ''}")
         note("Two per year in spring/autumn => the server observes DST.")
         note("Many scattered dates => these are data gaps, not DST.")
+
+
+# --------------------------------------------------------------------------
+# 6b. DST fingerprint
+# --------------------------------------------------------------------------
+
+WEEKEND_GAP_MIN_HOURS = 24
+SUNDAY = 6  # date.weekday(): Monday is 0
+# A bucket with fewer weeks than this cannot support a modal hour worth
+# reading. The EU/US disagreement window supplies only ~4 weeks a year, so
+# this is the binding constraint on the test and the reason it needs several
+# dense years rather than one.
+MIN_WEEKS_PER_BUCKET = 8
+
+
+def nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """Return the ``n``-th ``weekday`` of a month (1-based).
+
+    Args:
+        year: Calendar year.
+        month: Calendar month.
+        weekday: ``date.weekday()`` value, 0 = Monday.
+        n: Which occurrence, 1-based.
+
+    Returns:
+        The date.
+    """
+    first = date(year, month, 1)
+    offset = (weekday - first.weekday()) % 7
+    return first + timedelta(days=offset + 7 * (n - 1))
+
+
+def last_weekday(year: int, month: int, weekday: int) -> date:
+    """Return the last ``weekday`` of a month.
+
+    Args:
+        year: Calendar year.
+        month: Calendar month.
+        weekday: ``date.weekday()`` value, 0 = Monday.
+
+    Returns:
+        The date.
+    """
+    day_after = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    last = day_after - timedelta(days=1)
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def us_is_summer(day: date) -> bool:
+    """Whether New York is on daylight time (EDT) on ``day``.
+
+    Second Sunday in March through the first Sunday in November. That rule
+    has been in force since 2007; the test restricts itself to dense years,
+    which begin well after that, so the pre-2007 rule is not implemented and
+    must not be inferred from this function.
+
+    Args:
+        day: A calendar date.
+
+    Returns:
+        True if New York is on daylight time.
+    """
+    start = nth_weekday(day.year, 3, SUNDAY, 2)
+    end = nth_weekday(day.year, 11, SUNDAY, 1)
+    return start <= day < end
+
+
+def eu_is_summer(day: date) -> bool:
+    """Whether Europe is on summer time on ``day``.
+
+    Last Sunday in March through the last Sunday in October, unchanged since
+    1996 across the EU.
+
+    Args:
+        day: A calendar date.
+
+    Returns:
+        True if Europe is on summer time.
+    """
+    start = last_weekday(day.year, 3, SUNDAY)
+    end = last_weekday(day.year, 10, SUNDAY)
+    return start <= day < end
+
+
+BOTH_WINTER = "both winter"
+BOTH_SUMMER = "both summer"
+MISMATCH = "US summer / EU winter"
+IMPOSSIBLE = "US winter / EU summer"
+
+
+def dst_bucket(day: date) -> str:
+    """Classify a date by the joint US/EU daylight-saving state.
+
+    Both transitions complete before the Sunday-evening New York session
+    open (US at 02:00 local, EU at 01:00 UTC), so classifying by the open's
+    own date needs no special case for transition weekends.
+
+    Args:
+        day: A calendar date.
+
+    Returns:
+        One of the four bucket constants.
+    """
+    us, eu = us_is_summer(day), eu_is_summer(day)
+    if us and eu:
+        return BOTH_SUMMER
+    if not us and not eu:
+        return BOTH_WINTER
+    return MISMATCH if us else IMPOSSIBLE
+
+
+def weekly_opens(rates: Any) -> list[datetime]:
+    """Return the first bar of each trading week, in server time.
+
+    Args:
+        rates: Full H1 rate array.
+
+    Returns:
+        Server-time datetimes of weekly session opens.
+    """
+    times = [to_naive(r["time"]) for r in rates]
+    opens: list[datetime] = []
+    for prev, nxt in pairwise(times):
+        if (nxt - prev) >= timedelta(hours=WEEKEND_GAP_MIN_HOURS):
+            opens.append(nxt)
+    return opens
+
+
+def report_dst_fingerprint(rates: Any) -> None:
+    """Determine whether the server clock is fixed, US-DST, or EU-DST.
+
+    **Standing assumption, and the test is void without it:** the weekly
+    session open is anchored to a fixed *local New York* time (Sunday 17:00
+    ET), which is the spot FX and metals convention. The market's clock is
+    the only reference available inside the bar timestamps — they are already
+    in server time and carry no UTC anchor — so the whole method is a
+    comparison of the server clock against the New York clock. If this broker
+    sets its session boundaries on its own local calendar instead, the result
+    below is meaningless rather than merely uncertain.
+
+    Given that anchor, the three candidate server clocks are separable,
+    because the US and EU transition on different dates:
+
+    ===================  ==============  ==============  ==============
+    server clock         both winter     both summer     US-only summer
+    ===================  ==============  ==============  ==============
+    fixed offset         hour H          hour H-1        hour H-1
+    tracks US DST        hour H          hour H          hour H
+    tracks EU DST        hour H          hour H          hour H-1
+    ===================  ==============  ==============  ==============
+
+    Two comparisons decide it. Both-winter versus both-summer separates a
+    fixed clock from any DST clock. The US-only-summer window — the ~3 weeks
+    between the second and last Sunday in March, plus the ~1 week between the
+    last Sunday in October and the first Sunday in November — then separates
+    the EU rule from the US rule. That window is the entire discriminating
+    signal and it is only about four weeks a year, which is why the test
+    needs several dense years and reports UNDETERMINED rather than guessing
+    when it does not have them.
+
+    Run on dense years only. An earlier modal-bar variant of this check
+    reported a modal interior-weekday count of 1 and detected nothing — it
+    was defeated by the sparse early history, which is absence of a working
+    test rather than absence of DST.
+
+    Args:
+        rates: Full H1 rate array, or ``None``.
+    """
+    header("6b. DST FINGERPRINT — which rule does the server clock follow?")
+
+    if rates is None or len(rates) == 0:
+        print("  no H1 history")
+        return
+
+    times = [to_naive(r["time"]) for r in rates]
+    per_day: Counter[Any] = Counter(t.date() for t in times)
+    dense_years = {
+        year
+        for year in {t.year for t in times}
+        if sum(
+            1 for d, c in per_day.items() if d.year == year and c >= DENSE_DAY_MIN_BARS
+        )
+        >= 150
+    }
+    if not dense_years:
+        print("  no year carries >= 150 dense days — cannot run the test")
+        note("VERDICT: UNDETERMINED — no dense year to run it on.")
+        return
+
+    row("dense years used", ", ".join(str(y) for y in sorted(dense_years)))
+    note("Sparse years are excluded: one bar a day has no session open to")
+    note("locate, so including them would dilute the modal hour with noise.")
+
+    opens = [o for o in weekly_opens(rates) if o.year in dense_years]
+    if not opens:
+        print("  no weekly opens found in dense years")
+        note("VERDICT: UNDETERMINED — no weekly opens located.")
+        return
+
+    buckets: dict[str, Counter[int]] = {
+        BOTH_WINTER: Counter(),
+        BOTH_SUMMER: Counter(),
+        MISMATCH: Counter(),
+        IMPOSSIBLE: Counter(),
+    }
+    for opened in opens:
+        buckets[dst_bucket(opened.date())][opened.hour] += 1
+
+    print()
+    row("weekly opens examined [MEASURED]", f"{len(opens):,}")
+    print()
+    print("  Weekly-open hour in SERVER time, by joint US/EU daylight state")
+    print("  — every number below is MEASURED.")
+    print()
+    print("      US/EU state              weeks   modal hour   purity")
+    print("      " + "-" * 58)
+
+    modal: dict[str, int | None] = {}
+    for name in (BOTH_WINTER, BOTH_SUMMER, MISMATCH, IMPOSSIBLE):
+        counts = buckets[name]
+        total = sum(counts.values())
+        if total == 0:
+            modal[name] = None
+            print(f"      {name:<22} {total:>7}            —        —")
+            continue
+        hour, hits = counts.most_common(1)[0]
+        modal[name] = hour
+        purity = 100.0 * hits / total
+        print(f"      {name:<22} {total:>7}     {hour:02d}:00 srv   {purity:>5.1f}%")
+    print()
+    note("'purity' is the share of that bucket's weeks landing on its modal")
+    note("hour. Low purity means missing Sunday bars are displacing the")
+    note("detected open, not that the clock is unstable.")
+
+    if buckets[IMPOSSIBLE]:
+        print()
+        note(f"{sum(buckets[IMPOSSIBLE].values())} weeks fell in the")
+        note("US-winter/EU-summer state, which the two calendars make")
+        note("impossible. Treat the whole section as suspect if this is")
+        note("more than a handful.")
+
+    winter_hour, summer_hour = modal[BOTH_WINTER], modal[BOTH_SUMMER]
+    mismatch_hour = modal[MISMATCH]
+    n_mismatch = sum(buckets[MISMATCH].values())
+
+    print()
+    if winter_hour is None or summer_hour is None:
+        verdict = "UNDETERMINED"
+        detail = [
+            "One of the two matched-season buckets is empty, so the first",
+            "comparison cannot even be made. More history is needed.",
+        ]
+    elif winter_hour != summer_hour:
+        verdict = "FIXED OFFSET (server clock does not observe DST)"
+        detail = [
+            f"The open moves from {winter_hour:02d}:00 in winter to "
+            f"{summer_hour:02d}:00 in summer.",
+            "New York moves and the server does not, so conversion to UTC",
+            "uses one constant offset for the whole span — the offset that",
+            "section 6 measures live is that constant.",
+        ]
+    elif n_mismatch < MIN_WEEKS_PER_BUCKET:
+        verdict = "UNDETERMINED — DST yes, rule not separable"
+        detail = [
+            f"The open hour is constant at {winter_hour:02d}:00 across both",
+            "matched seasons, so the server clock does track New York and is",
+            "not a fixed offset.",
+            f"But only {n_mismatch} weeks fall in the US-only-summer window,",
+            f"below the {MIN_WEEKS_PER_BUCKET} needed to read a modal hour,",
+            "so US rule and EU rule cannot be told apart from this history.",
+        ]
+    elif mismatch_hour != winter_hour:
+        verdict = "TRACKS DST — EU RULE"
+        detail = [
+            f"Constant at {winter_hour:02d}:00 whenever both calendars agree,",
+            f"and {mismatch_hour:02d}:00 in the weeks where New York has",
+            "changed and Europe has not.",
+            "That is exactly the European transition-date signature.",
+            "Conversion to UTC needs two offsets and the EU switch dates.",
+        ]
+    else:
+        verdict = "TRACKS DST — US RULE"
+        detail = [
+            f"Constant at {winter_hour:02d}:00 in every state, including the",
+            f"{n_mismatch} weeks where New York changed and Europe had not.",
+            "The server therefore switches on the American dates.",
+            "Conversion to UTC needs two offsets and the US switch dates.",
+        ]
+
+    row("VERDICT", verdict)
+    for line in detail:
+        note(line)
+
+    # The residual, and the one test that makes it interpretable. A missing
+    # Sunday-evening bar can only push the *detected* open later than the
+    # true one; nothing absent from the feed can make an open appear early.
+    # So a late residual is a data gap and a holiday-shortened week, while an
+    # early residual means the clock moved in a way this model does not
+    # capture — and that invalidates the verdict rather than qualifying it.
+    off_modal = [
+        o
+        for o in opens
+        if modal[dst_bucket(o.date())] is not None
+        and o.hour != modal[dst_bucket(o.date())]
+    ]
+    if off_modal:
+        early = [o for o in off_modal if o.hour < (modal[dst_bucket(o.date())] or 0)]
+        print()
+        print(f"  Weekly opens away from their bucket's modal hour ({len(off_modal)}):")
+        print("      date                  server hour   direction   US/EU state")
+        print("      " + "-" * 66)
+        for o in sorted(off_modal)[:20]:
+            bucket = dst_bucket(o.date())
+            hour = modal[bucket] or 0
+            direction = "EARLY" if o.hour < hour else "late"
+            print(
+                f"      {fmt_time(o)}   {o.hour:02d}:00       {direction:<9}   {bucket}"
+            )
+        if len(off_modal) > 20:
+            note(f"... and {len(off_modal) - 20} more")
+        print()
+        row("residual opening LATE", f"{len(off_modal) - len(early):,}")
+        row("residual opening EARLY", f"{len(early):,}")
+        if early:
+            note("An EARLY open cannot be produced by a missing bar — absence")
+            note("can only delay the first bar seen, never advance it. These")
+            note("weeks mean the server clock moved in a way the three-rule")
+            note("model does not describe. DO NOT USE the verdict above.")
+        else:
+            note("Every residual opens late, which is what a missing Sunday-")
+            note("evening bar or a holiday-shortened week produces. None can")
+            note("be a clock movement, so none contradicts the verdict.")
+
+    print()
+    note("Whatever this says, ingestion must FREEZE the derived rule as a")
+    note("committed artifact and assert against it — a rule re-derived from")
+    note("the data it validates can never detect that the broker changed it.")
 
 
 # --------------------------------------------------------------------------
@@ -632,8 +1182,8 @@ def report_spread(mt5: Any, symbol: str, earliest_tick_at: datetime | None) -> N
 # --------------------------------------------------------------------------
 
 
-def report_gaps(rates: Any) -> None:
-    """Classify gaps in the H1 series.
+def report_gaps(rates: Any) -> int:
+    """Classify gaps in the H1 series, and return the daily-break count.
 
     ``DATA_CONTRACT.md`` §6 forbids silent imputation, which is only
     actionable if a missing bar can be distinguished from a closed market.
@@ -643,16 +1193,26 @@ def report_gaps(rates: Any) -> None:
     with false alarms.
 
     The daily-break hour is derived from the data rather than assumed, on the
-    same principle as the DST rule.
+    same principle as the DST rule — and it is derived as a *set* of hours,
+    not one. A server clock on the European rule puts the daily break at one
+    server hour for most of the year and one hour earlier during the weeks
+    when New York has changed over and Europe has not. Keying on the single
+    modal hour therefore refiles every break in those weeks as an in-session
+    hole: roughly a hundred and sixty false defects per decade, all of them
+    landing in March and late October, which is precisely where a reader
+    looking for a DST artefact would find them and mistake them for one.
 
     Args:
         rates: Full H1 rate array, or ``None``.
+
+    Returns:
+        Count of gaps classified as daily session breaks.
     """
     header("5. GAPS — closures vs. missing bars inside an open session")
 
     if rates is None or len(rates) < 2:
         print("  insufficient H1 history for a gap census")
-        return
+        return 0
 
     times = [to_naive(r["time"]) for r in rates]
     step = timedelta(hours=1)
@@ -665,12 +1225,19 @@ def report_gaps(rates: Any) -> None:
 
     if not gaps:
         print("  no gaps at all — every consecutive bar is exactly 1h apart")
-        return
+        return 0
 
     single = [g for g in gaps if g[2] == 1]
-    break_hour = None
-    if single:
-        break_hour = Counter(g[0].hour for g in single).most_common(1)[0][0]
+    single_by_hour: Counter[int] = Counter(g[0].hour for g in single)
+    # Every hour holding at least this share of all one-bar gaps is a session
+    # break, not a defect. The threshold is deliberately far below the ~6%
+    # a DST-mismatch hour carries, and far above the share any scattered
+    # data hole reaches.
+    break_hours = {
+        hour
+        for hour, count in single_by_hour.items()
+        if count >= BREAK_HOUR_MIN_SHARE * len(single)
+    }
 
     weekend = daily = holiday = suspicious = 0
     suspicious_list: list[tuple[datetime, datetime, int]] = []
@@ -681,7 +1248,7 @@ def report_gaps(rates: Any) -> None:
         )
         if spans_saturday:
             weekend += 1
-        elif missing == 1 and break_hour is not None and start.hour == break_hour:
+        elif missing == 1 and start.hour in break_hours:
             daily += 1
         elif missing >= HOLIDAY_MIN_MISSING_BARS:
             holiday += 1
@@ -692,10 +1259,15 @@ def report_gaps(rates: Any) -> None:
     row("total gaps", len(gaps))
     print()
     row("weekend closures", weekend)
+    hours_text = ", ".join(f"{h:02d}" for h in sorted(break_hours))
     row(
         "daily session breaks",
-        f"{daily}" + (f"  (break at server hour {break_hour:02d})" if daily else ""),
+        f"{daily}" + (f"  (at server hour {hours_text})" if daily else ""),
     )
+    if len(break_hours) > 1:
+        note("More than one break hour. That is the DST signature, not a")
+        note("defect — see section 6b. Classifying on the modal hour alone")
+        note("would have reported the rest as in-session holes.")
     row(f"holiday-scale (>={HOLIDAY_MIN_MISSING_BARS} bars)", holiday)
     row("SUSPICIOUS (in-session holes)", suspicious)
 
@@ -720,6 +1292,8 @@ def report_gaps(rates: Any) -> None:
         print()
         note("No unexplained in-session holes. Every gap is a market closure.")
 
+    return daily
+
 
 # --------------------------------------------------------------------------
 # Verdict
@@ -727,7 +1301,14 @@ def report_gaps(rates: Any) -> None:
 
 
 def report_verdict(depth: dict[str, datetime | None], rates: Any) -> None:
-    """Summarise what the measured depth permits.
+    """Summarise what the measured history supports.
+
+    Every count here is measured. The previous version multiplied a median
+    weekly bar count by the span in years and printed the product as "total
+    independent decisions" — an extrapolation presented as a measurement,
+    which on this feed overstated the truth by 63% because the early history
+    is sparse. The only estimate that remains is the per-year rate implied by
+    the dense period, and it is labelled.
 
     Args:
         depth: Earliest timestamps by series.
@@ -735,43 +1316,70 @@ def report_verdict(depth: dict[str, datetime | None], rates: Any) -> None:
     """
     header("VERDICT — what this history supports")
 
-    now = datetime.now(UTC).replace(tzinfo=None)
     h1 = depth.get("H1")
     if h1 is None or rates is None or len(rates) == 0:
         print("  no H1 history — the data layer cannot be designed on this feed")
         return
 
     times = [to_naive(r["time"]) for r in rates]
-    per_week = Counter(t.isocalendar()[:2] for t in times)
-    counts = sorted(per_week.values())
-    median_week = counts[len(counts) // 2] if counts else 0
-    years = (now - h1).days / 365.25
-    per_year = median_week * 52 / 24
-    total = per_year * years
+    per_day: Counter[Any] = Counter(t.date() for t in times)
+    dense_days = [d for d, c in per_day.items() if c >= DENSE_DAY_MIN_BARS]
+    dense_bars = sum(c for d, c in per_day.items() if c >= DENSE_DAY_MIN_BARS)
 
-    row("history span", f"{years:.2f} years")
-    row("decisions/year at H=24", f"{per_year:.0f}")
-    row("total independent decisions", f"{total:.0f}")
+    total_decisions = len(times) // 24
+    dense_decisions = dense_bars // 24
+
+    row("total H1 bars [MEASURED]", f"{len(times):,}")
+    row("bars on dense days [MEASURED]", f"{dense_bars:,}")
+    row("dense days [MEASURED]", f"{len(dense_days):,}")
     print()
+    row("decisions, all bars [MEASURED]", f"{total_decisions:,}")
+    row("decisions, dense only [MEASURED]", f"{dense_decisions:,}")
+    note("Both are counted, not extrapolated. The dense-only figure is the")
+    note("conservative one: sparse stretches cannot support 24-bar labels.")
 
+    if dense_days:
+        span_dense = (max(dense_days) - min(dense_days)).days / 365.25
+        if span_dense > 0:
+            print()
+            row(
+                "dense-period span [MEASURED]",
+                f"{span_dense:.2f} years ({min(dense_days)} to {max(dense_days)})",
+            )
+            row(
+                "decisions/year over that span [ESTIMATE]",
+                f"{dense_decisions / span_dense:.0f}",
+            )
+            note("Labelled an estimate: it divides a measured count by a")
+            note("measured span and assumes the rate is uniform within it.")
+
+    # Gates are evaluated on the conservative (dense-only) count.
+    print()
+    print("  Protocol requirements, against the DENSE-ONLY count:")
     checks = [
-        ("pooled walk-forward >= 150 (K-6)", total * 0.8 >= 150),
-        ("each of 5 folds >= 150", total * 0.8 / 5 >= 150),
-        ("sealed holdout (20%) >= 150", total * 0.2 >= 150),
-        ("spans 2022 for the §11 regime split", h1.year < 2022),
+        ("pooled walk-forward >= 150 (K-6)", dense_decisions * 0.8 >= 150),
+        ("each of 5 folds >= 150", dense_decisions * 0.8 / 5 >= 150),
+        ("sealed holdout (20%) >= 150", dense_decisions * 0.2 >= 150),
     ]
     for label, ok in checks:
         row(label, "YES" if ok else "NO")
 
+    pre_2022 = sum(1 for d in dense_days if d.year < 2022)
+    post_2022 = sum(1 for d in dense_days if d.year >= 2022)
+    row(
+        "spans 2022 for the §11 regime split", "YES" if pre_2022 and post_2022 else "NO"
+    )
+    note(f"dense days pre-2022: {pre_2022:,}   post-2022: {post_2022:,}")
+    note("Both sides need enough dense days to carry their own decisions —")
+    note("a split that spans 2022 on paper but is sparse on one side cannot")
+    note("support the regime-shift test that §11 calls the harshest stress.")
+
     print()
-    if all(ok for _, ok in checks):
-        note("Full protocol is runnable at H=24 on this feed.")
+    if all(ok for _, ok in checks) and pre_2022 and post_2022:
+        note("Full protocol is runnable at H=24 on the dense portion.")
     else:
-        note("At least one requirement fails. That is a FINDING, to be")
-        note("reported — not a constraint to design around. The options are")
-        note("consequential: deeper history, claims restricted to pooled")
-        note("statistics only, or a finer bar interval — and the last changes")
-        note("the label definition, which needs a hypothesis (RESEARCH §7).")
+        note("At least one requirement fails on the dense-only count. That is")
+        note("a FINDING to be reported, not a constraint to design around.")
 
 
 # --------------------------------------------------------------------------
@@ -808,10 +1416,14 @@ def main() -> int:
         print("  (depth probing walks back year by year; this takes a minute)")
         depth = report_depth(mt5, symbol)
 
-        rates = report_counts(mt5, symbol, depth.get("H1"))
+        rates = fetch_all_h1(mt5, symbol, depth.get("H1"))
+        report_density(rates)
+        report_spread_coverage(rates)
         report_spread(mt5, symbol, depth.get("tick"))
-        report_gaps(rates)
+        daily_breaks = report_gaps(rates)
+        report_discrepancy(rates, daily_breaks)
         report_offset(mt5, symbol, rates)
+        report_dst_fingerprint(rates)
         report_verdict(depth, rates)
 
         print()

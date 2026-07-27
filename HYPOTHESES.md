@@ -11,14 +11,14 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 4
+Registered (registry completeness) ... 5
   ├─ Accepted ....................... 0
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 3
+  └─ In flight ...................... 4
 
 N_claims (multiple-testing denom.) ... N = 2
-  ├─ gates  (not counted) ........... 2   H-001, H-002
+  ├─ gates  (not counted) ........... 3   H-001, H-002, H-005
   └─ claims (counted) ............... 2   H-003, H-004
 
 Holdout openings used ............... 0 / 3
@@ -337,4 +337,170 @@ phase.
 
 > New entries appended below. Never reordered. Never removed.
 
-<!-- H-005 onward -->
+### H-005 — Registered deviation from `EVALUATION.md` §10: spread is not calibratable
+
+- **Registered:** 2026-07-27 11:40 UTC
+- **Class:** gate — does not count toward `N_claims`
+- **Status:** REGISTERED
+
+**What this is**
+
+> Not an edge claim. It is the registration of a deviation from a locked document, so that
+> the deviation is a decision with a threshold and an exit condition rather than an
+> omission discovered later. `RESEARCH.md` §7 requires a hypothesis for any edit that
+> "could change whether a past or future run counts as a pass." Running the backtest with
+> a cost model that does not satisfy §10 is exactly that, whether or not §10's text is
+> touched.
+
+**The deviation**
+
+> `EVALUATION.md` §10 specifies spread as "session-dependent + event multiplier. Widens
+> 3–10× around scheduled news and at the weekly open. **Never a constant.**"
+>
+> That model cannot be built. It requires a historical bid/ask series, and the probe
+> establishes that no such series exists for this feed:
+>
+> - Genuine bid/ask ticks begin roughly two months back. The evaluation window is eleven
+>   years of dense H1 history. Tick coverage is ~1.5% of it.
+> - The `spread` field on H1 bars is not a substitute. It is the spread recorded at bar
+>   close, not the spread that would have been paid on a fill, and the probe measures its
+>   coverage stepping from ~0% to ~100% in a single year — the broker began recording it
+>   then. Bars before that carry a zero that means *unrecorded*, and `DATA_CONTRACT.md` §6
+>   forbids treating a missing value as a measured one.
+> - The one spread that *is* observable is a demo quote. It reads 15 points with
+>   `median == p95 == 15.0` across a full sampled day, on a symbol whose `spread_float`
+>   flag is `True`. A floating-spread symbol showing zero variation over an entire day is
+>   not reporting the market; it is reporting a demo server's fixed quote.
+>
+> So §10's spread row is unsatisfiable for the historical period, and it will stay
+> unsatisfiable until the forward capture in `scripts/capture_ticks.py` has accumulated a
+> real series.
+
+**Substitute — what is used instead**
+
+> A **pessimistic constant floor**, with §10's structure preserved above it:
+>
+> | Component | Substitute |
+> |---|---|
+> | Spread base | Constant floor at `INFLATION × observed_demo_spread` = **5 × 15 = 75 points = $0.75/oz**, one full spread per round turn, **$75 per 100 oz lot**. |
+> | Session / event multiplier | **Unchanged from §10.** The 3–10× widening at news and the weekly open is applied *on top of the floor*, not on top of a calibrated base. |
+> | Slippage, stop gap-through, commission, swap, latency | **Unchanged from §10.** |
+>
+> The deviation is confined to the base being a constant. Everything else in §10 stands.
+>
+> This is still a deviation and is registered as one: §10 says "never a constant" and this
+> is a constant. The prohibition exists to forbid *optimistic* constants — a flat spread
+> chosen because it is convenient understates cost in exactly the conditions where trades
+> are most likely to be triggered. The substitute inverts that error's sign but does not
+> make the deviation disappear.
+
+**The inflation factor, and the argument for it**
+
+> **×5, giving a 75-point floor.** The argument, stated as an argument and not as a
+> measurement:
+>
+> 1. **The observed spread is a lower bound on the true one, and the direction is known.**
+>    A demo server does not model liquidity. Its quote cannot be wider than the live one in
+>    any systematic way, and it is routinely narrower. There is no scenario in which 15
+>    points overstates what would have been paid.
+> 2. **15 points is very likely the most optimistic spread in the entire 18-year span.**
+>    The history covers 2008–09, gold's 2011 run, the April 2013 crash and March 2020. Gold
+>    spreads in those windows were multiples of calm-market spreads, and gold was a thinner
+>    retail product for most of the early history. A floor set at the single most favourable
+>    observation available would be the definition of an optimistic assumption.
+> 3. **Retail gold spreads are commonly 20–35 points in calm conditions** at brokers of this
+>    type. A floor of 75 points sits above that band rather than inside it, which is the
+>    point: it is chosen to be uncomfortable.
+>
+> **Counter-argument, recorded because it is correct.** A multiplier not derived from
+> measurement is not evidence, and no amount of prose makes ×5 a fact. It is a choice
+> between two errors. A factor set too high kills real edges (Type II). A factor set too
+> low admits false ones (Type I). `RESEARCH.md` §0 puts the burden of proof on the
+> feature, never on the skeptic, so the choice errs deliberately toward Type II. That is a
+> stated preference, not a derivation, and it is registered here — before any backtest
+> exists — precisely so it cannot be revised downward after seeing a result it kills.
+
+**Primary metric & threshold — what makes this a gate rather than an assumption**
+
+> The factor is not the deliverable. **Breakeven spread is.**
+>
+> Every result reported while this gate is open must state the **breakeven spread**: the
+> constant spread floor, in points, at which the measured edge reaches zero. That converts
+> the unknown from an argument into a measured quantity — instead of debating whether ×5
+> is right, the reader is told the edge survives up to *N* points and can apply their own
+> judgement about what the live spread was.
+>
+> | # | Condition | Threshold |
+> |---|---|---|
+> | i | Default backtest spread floor | ≥ **75 points**. A run using less is **VOID**. |
+> | ii | Breakeven spread reported alongside every edge claim | present, or the claim is void |
+> | iii | Deviation notice carried in the run manifest of every run in the evaluation path | present, or the run is void |
+>
+> Any failure voids the run. It is not a K-code: `CLAUDE.md` Hard Rule 4 reserves K-codes
+> for research-validity conditions in `EVALUATION.md` §1, and this is a registered
+> deviation, not a kill criterion. §1 is unchanged and stays unchanged.
+
+**What K-5 can and cannot establish under this substitute**
+
+> Recorded verbatim, because it is the whole reason this entry exists:
+>
+> > **Passing K-5 rules out an edge that is marginal at assumed costs. It does not rule out
+> > an edge that exists only because historical costs are understated.**
+>
+> K-5 doubles the *assumed* cost. If the assumption is wrong by more than 2×, doubling does
+> not reach the truth — it stress-tests the neighbourhood of a wrong number. The inflation
+> factor is what makes the assumption's error direction known; K-5 then tests robustness
+> around it. Composed, the two give an effective stress of **10× the observed demo spread**
+> (5× floor, doubled). That is the strongest statement available, and it is a statement
+> about a bound, not about the market.
+
+**Guardrail — what this must not become**
+
+> The floor may be raised at any time without a new hypothesis; raising it is
+> conservative and cannot manufacture an edge. **Lowering it requires a new hypothesis ID**,
+> and if it is lowered after a result that the higher floor killed, that result is
+> hypothesis laundering under `RESEARCH.md` §5.2 regardless of what justification
+> accompanies it.
+
+**Enforcement**
+
+> The backtest engine does not exist yet (`CLAUDE.md` Build Order step 3), so there is
+> currently nothing that can violate this. When it is built, conditions (i)–(iii) become
+> build-enforced in the same pattern as the K-1 sensitivity guard: the floor as a module
+> constant with a test asserting it has not been reduced, and the deviation notice emitted
+> into the run manifest by the manifest writer rather than by the caller.
+
+**Exit condition**
+
+> This gate closes when the spread model can satisfy §10 as written. Two routes:
+>
+> - **(a) Forward capture matures.** `scripts/capture_ticks.py` accumulates genuine bid/ask
+>   across at least one full annual cycle — enough to fit a session-dependent curve and to
+>   observe the news and weekly-open widening §10 names. The §10 model is then built from
+>   it and this substitute is retired **through a new hypothesis**, not by deleting this
+>   entry.
+> - **(b) A historical tick source is obtained** with genuine bid/ask covering the
+>   evaluation window, and validated against the forward capture over their overlap. The
+>   overlap check is not optional: a third-party tick series that disagrees with the
+>   execution broker's own quotes is not a cost model for this broker.
+>
+> Until one of those closes it, **no result may be described as satisfying §10**, and every
+> run in the evaluation path cites H-005.
+
+**Pre-committed interpretation**
+
+> - If a run satisfies (i)–(iii): the result stands, annotated as resting on a bounded cost
+>   assumption rather than a calibrated one. It is admissible at `RESEARCH.md` Tier 2 at
+>   best, never Tier 1, while this gate is open.
+> - If a run violates any of (i)–(iii): the run is **VOID**. Re-run it correctly. A void
+>   run is not a negative result and concludes nothing.
+> - If the breakeven spread comes in *below* the observed demo spread of 15 points: there
+>   is no edge at any plausible cost assumption, and the configuration is terminated
+>   without waiting for the calibrated model.
+
+--- OPEN ---
+
+- **Closes via:** a new hypothesis under exit condition (a) or (b). Never by editing this
+  entry.
+
+<!-- H-006 onward -->

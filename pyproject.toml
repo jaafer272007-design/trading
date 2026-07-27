@@ -92,6 +92,10 @@ convention = "google"
 # annotation rather than a dodge. Scoped to this single file deliberately;
 # ANN401 stays on everywhere that ships.
 "scripts/mt5_probe.py" = ["ANN401"]
+# Same reasoning for the tick recorder: standalone, Windows-only, nothing in
+# the repository imports it, and its one dependency is the same untyped
+# MetaTrader5 module.
+"scripts/capture_ticks.py" = ["ANN401"]
 
 # ---------------------------------------------------------------------------
 # mypy — strict
