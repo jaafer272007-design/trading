@@ -85,6 +85,13 @@ convention = "google"
 # DATA_CONTRACT §1 and every public function in it must say what it enforces.
 "tests/**/test_*.py" = ["D100", "D103", "D104"]
 "tests/**" = ["D100", "D104"]
+# The MT5 probe is a standalone measurement instrument, not pipeline code:
+# nothing imports it, it writes nothing, and it cannot even run on this
+# platform. Its one dependency, MetaTrader5, is Windows-only, ships no type
+# stubs, and returns bare NumPy structured arrays — so `Any` is the honest
+# annotation rather than a dodge. Scoped to this single file deliberately;
+# ANN401 stays on everywhere that ships.
+"scripts/mt5_probe.py" = ["ANN401"]
 
 # ---------------------------------------------------------------------------
 # mypy — strict
