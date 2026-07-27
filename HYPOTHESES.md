@@ -633,11 +633,24 @@ phase.
 > the window. It is excluded on its own merits, one day at a time, and the days around it
 > are unaffected. Conflating the two is what produced the false ramp.
 >
-> **`window_start` remains PROVISIONAL at 2015-09-11 and is NOT frozen.** The corrected
-> measurement has not yet been run against the live feed. If it reports a cliff, that date
-> is frozen. If it reports a genuine ramp — one-bar-era days genuinely interleaved with
-> full days — the start moves to the day after the **last** such day, which is the
-> conservative direction.
+> **FROZEN 2026-07-27, third run: `window_start` = 2015-09-11.**
+>
+> The corrected measurement reports a clean cliff:
+>
+> | | |
+> |---|---|
+> | last one-bar-era day | **2015-09-09** |
+> | first full day | **2015-09-11** |
+> | one-bar-era days after the first full day | **0** |
+> | short trading days inside the dense era | 19 (excluded per day, not by the window) |
+>
+> Zero is the number that decides it. The feed changes character exactly once, so a single
+> date describes the boundary and no window opening at it can admit a day with no data.
+> The 78-dense-days-in-2015 arithmetic that suggested this in the first run is now
+> confirmed by the measurement that could have falsified it.
+>
+> `window_end` is the last complete day in the snapshot, never the in-progress day — the
+> same rule that stopped the boundary computation from being set by a partial session.
 >
 > The gap census places a 10-bar hole at 2015-09-10 — the boundary day itself, half sparse
 > and half dense. It is an artefact of the transition, not a defect, and it falls outside
@@ -667,9 +680,10 @@ phase.
 
 --- OPEN ---
 
-- **Pending:** re-run the corrected `report_density_boundary` against the live feed,
-  confirm cliff vs ramp, then freeze the date and move to `STANDING`. Not frozen on the
-  numbers from either run so far — the first was produced by an instrument with two
-  defects in this exact computation.
+- **Date frozen:** 2026-07-27, `window_start` = 2015-09-11, from a cliff measurement that
+  reported zero one-bar-era days after the first full day.
+- **Pending for `STANDING`:** conditions (i)–(iv) become build-enforced when the loader and
+  manifest writer exist. Until then the date is frozen but nothing asserts it, because
+  there is no code yet that could violate it.
 
 <!-- H-007 onward -->

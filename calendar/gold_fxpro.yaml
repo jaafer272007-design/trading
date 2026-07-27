@@ -1,0 +1,224 @@
+# Frozen market calendar — GOLD on FxPro-MT5.
+#
+# THIS FILE IS A DECLARATION ABOUT THE WORLD, NOT DERIVED DATA.
+#
+# It is committed, hashed, and asserted against on every ingest. That is the
+# whole point: a rule re-derived from the data it validates can never detect
+# that the broker changed it. If the feed stops matching this file, ingestion
+# halts and a human decides whether the world changed or the file is wrong.
+#
+# Every value here was measured by scripts/mt5_probe.py and is reproducible by
+# re-running it. The provenance tag on each block says which.
+#
+# Reviewing this file means checking it against sources OUTSIDE this project:
+# the CME/COMEX published holiday schedule, and the EU/US daylight-saving
+# transition dates. Do not review it against the feed — that is circular.
+
+schema_version: 1
+
+symbol:
+  # DATA_CONTRACT §3: the exact broker string, pinned. A symbol that resolves
+  # to a different instrument silently is a whole-project failure.
+  exact: "GOLD"                     # [MEASURED] probe §3
+  description: "SPOT Gold Ounce vs US Dollar"
+  digits: 2                         # [MEASURED]
+  point: 0.01                       # [MEASURED]
+  contract_size: 100.0              # [MEASURED]
+
+server:
+  name: "FxPro-MT5 Demo"            # [MEASURED] probe §3
+  company: "FxPro Markets Ltd."     # [MEASURED]
+
+# ---------------------------------------------------------------------------
+# The server clock. This is the load-bearing field.
+# ---------------------------------------------------------------------------
+#
+# VERDICT: the server observes EUROPEAN daylight-saving dates.
+#
+# [MEASURED] probe §6b, run 2026-07-27T14:01:13Z. Two independent anchors
+# agreed (weekly close, n=529; daily session break, n=1,055); the weekly open
+# abstained as not-unimodal and contributed nothing either way.
+#
+# THE ARITHMETIC — check this rather than trusting the verdict.
+#
+# The market's rollover is 17:00 New York local, which moves with US DST. The
+# server is UTC+2 in European winter and UTC+3 in European summer. The two
+# calendars disagree for about four weeks a year: from the second Sunday in
+# March (US springs forward) to the last Sunday in March (EU does), and from
+# the last Sunday in October (EU falls back) to the first Sunday in November
+# (US does). In those weeks New York has changed and Europe has not.
+#
+#   state            NY 17:00    in UTC     server offset   server hour
+#   ---------------  ----------  ---------  --------------  -----------
+#   both winter      17:00 EST   22:00      +2              00:00
+#   both summer      17:00 EDT   21:00      +3              00:00
+#   US-only summer   17:00 EDT   21:00      +2              23:00
+#
+# So an EU-rule server puts the daily break at 00:00 when the calendars agree
+# and 23:00 when only the US has changed, and the weekly close (the last bar
+# before that break) one hour earlier again.
+#
+#   anchor                predicted matched / mismatch   measured
+#   --------------------  -----------------------------  -----------------
+#   daily break hour      00:00 / 23:00                  00:00 / 23:00  OK
+#   weekly close hour     23:00 / 22:00                  23:00 / 22:00  OK
+#
+# A US-rule server would show no mismatch shift at all; a fixed-offset server
+# would shift for the whole US summer rather than for four weeks. Neither
+# matches. The live offset measured at 2026-07-27 (European summer) was
+# UTC+3.00, which agrees with the summer row.
+#
+clock:
+  rule: "eu"                        # one of: eu | us | fixed
+  offset_hours_winter: 2            # [MEASURED] + arithmetic above
+  offset_hours_summer: 3            # [MEASURED] live offset UTC+3.00, EU summer
+  # EU transition rule, in force unchanged since 1996. Stated so a reader can
+  # check it against the directive rather than infer it from this file.
+  summer_starts: "last Sunday in March"
+  summer_ends: "last Sunday in October"
+
+# Market session structure, in SERVER hours, keyed by whether the US and EU
+# calendars agree. [MEASURED] probe §5 and §6b.
+session:
+  daily_break_hour:
+    matched: 0                      # the bar that is absent every trading day
+    mismatch: 23
+  weekly_close_hour:
+    matched: 23                     # last bar of the trading week
+    mismatch: 22
+
+# ---------------------------------------------------------------------------
+# Evaluation window — H-006, frozen 2026-07-27.
+# ---------------------------------------------------------------------------
+#
+# The feed advertises 18.38 years. Before 2015-09-11 it carries one bar a day,
+# which cannot support a 24-bar label. [MEASURED] probe §2: zero one-bar-era
+# days occur after the first full day, so the boundary is a clean cliff and a
+# single date describes it.
+#
+# Moving this LATER needs no hypothesis. Moving it EARLIER requires a new
+# hypothesis ID — see H-006.
+window:
+  start: 2015-09-11                 # [MEASURED] first full day
+  # end is not fixed here: it is the last COMPLETE day in each snapshot, never
+  # the in-progress day. Recorded per-snapshot in the manifest.
+
+# ---------------------------------------------------------------------------
+# CME/COMEX holiday closures.
+# ---------------------------------------------------------------------------
+#
+# Enumerated rather than expressed as rules, deliberately. A rule cannot be
+# reviewed against a published schedule; a list of dates can, one line at a
+# time. [MEASURED] probe §5b matched 66 of 66 observed early closes against
+# this calendar — 100%.
+#
+# A holiday closes the session BEFORE it as well as itself, so ingestion
+# matches within two days either side. Juneteenth became a CME holiday in 2022
+# and appears only from then.
+holidays:
+  - {date: 2015-11-26, name: "Thanksgiving"}
+  - {date: 2015-12-25, name: "Christmas"}
+  - {date: 2016-01-01, name: "New Year's Day"}
+  - {date: 2016-01-18, name: "MLK Day"}
+  - {date: 2016-02-15, name: "Presidents' Day"}
+  - {date: 2016-03-25, name: "Good Friday"}
+  - {date: 2016-05-30, name: "Memorial Day"}
+  - {date: 2016-07-04, name: "Independence Day"}
+  - {date: 2016-09-05, name: "Labor Day"}
+  - {date: 2016-11-24, name: "Thanksgiving"}
+  - {date: 2016-12-25, name: "Christmas"}
+  - {date: 2017-01-01, name: "New Year's Day"}
+  - {date: 2017-01-16, name: "MLK Day"}
+  - {date: 2017-02-20, name: "Presidents' Day"}
+  - {date: 2017-04-14, name: "Good Friday"}
+  - {date: 2017-05-29, name: "Memorial Day"}
+  - {date: 2017-07-04, name: "Independence Day"}
+  - {date: 2017-09-04, name: "Labor Day"}
+  - {date: 2017-11-23, name: "Thanksgiving"}
+  - {date: 2017-12-25, name: "Christmas"}
+  - {date: 2018-01-01, name: "New Year's Day"}
+  - {date: 2018-01-15, name: "MLK Day"}
+  - {date: 2018-02-19, name: "Presidents' Day"}
+  - {date: 2018-03-30, name: "Good Friday"}
+  - {date: 2018-05-28, name: "Memorial Day"}
+  - {date: 2018-07-04, name: "Independence Day"}
+  - {date: 2018-09-03, name: "Labor Day"}
+  - {date: 2018-11-22, name: "Thanksgiving"}
+  - {date: 2018-12-25, name: "Christmas"}
+  - {date: 2019-01-01, name: "New Year's Day"}
+  - {date: 2019-01-21, name: "MLK Day"}
+  - {date: 2019-02-18, name: "Presidents' Day"}
+  - {date: 2019-04-19, name: "Good Friday"}
+  - {date: 2019-05-27, name: "Memorial Day"}
+  - {date: 2019-07-04, name: "Independence Day"}
+  - {date: 2019-09-02, name: "Labor Day"}
+  - {date: 2019-11-28, name: "Thanksgiving"}
+  - {date: 2019-12-25, name: "Christmas"}
+  - {date: 2020-01-01, name: "New Year's Day"}
+  - {date: 2020-01-20, name: "MLK Day"}
+  - {date: 2020-02-17, name: "Presidents' Day"}
+  - {date: 2020-04-10, name: "Good Friday"}
+  - {date: 2020-05-25, name: "Memorial Day"}
+  - {date: 2020-07-04, name: "Independence Day"}
+  - {date: 2020-09-07, name: "Labor Day"}
+  - {date: 2020-11-26, name: "Thanksgiving"}
+  - {date: 2020-12-25, name: "Christmas"}
+  - {date: 2021-01-01, name: "New Year's Day"}
+  - {date: 2021-01-18, name: "MLK Day"}
+  - {date: 2021-02-15, name: "Presidents' Day"}
+  - {date: 2021-04-02, name: "Good Friday"}
+  - {date: 2021-05-31, name: "Memorial Day"}
+  - {date: 2021-07-04, name: "Independence Day"}
+  - {date: 2021-09-06, name: "Labor Day"}
+  - {date: 2021-11-25, name: "Thanksgiving"}
+  - {date: 2021-12-25, name: "Christmas"}
+  - {date: 2022-01-01, name: "New Year's Day"}
+  - {date: 2022-01-17, name: "MLK Day"}
+  - {date: 2022-02-21, name: "Presidents' Day"}
+  - {date: 2022-04-15, name: "Good Friday"}
+  - {date: 2022-05-30, name: "Memorial Day"}
+  - {date: 2022-06-19, name: "Juneteenth"}
+  - {date: 2022-07-04, name: "Independence Day"}
+  - {date: 2022-09-05, name: "Labor Day"}
+  - {date: 2022-11-24, name: "Thanksgiving"}
+  - {date: 2022-12-25, name: "Christmas"}
+  - {date: 2023-01-01, name: "New Year's Day"}
+  - {date: 2023-01-16, name: "MLK Day"}
+  - {date: 2023-02-20, name: "Presidents' Day"}
+  - {date: 2023-04-07, name: "Good Friday"}
+  - {date: 2023-05-29, name: "Memorial Day"}
+  - {date: 2023-06-19, name: "Juneteenth"}
+  - {date: 2023-07-04, name: "Independence Day"}
+  - {date: 2023-09-04, name: "Labor Day"}
+  - {date: 2023-11-23, name: "Thanksgiving"}
+  - {date: 2023-12-25, name: "Christmas"}
+  - {date: 2024-01-01, name: "New Year's Day"}
+  - {date: 2024-01-15, name: "MLK Day"}
+  - {date: 2024-02-19, name: "Presidents' Day"}
+  - {date: 2024-03-29, name: "Good Friday"}
+  - {date: 2024-05-27, name: "Memorial Day"}
+  - {date: 2024-06-19, name: "Juneteenth"}
+  - {date: 2024-07-04, name: "Independence Day"}
+  - {date: 2024-09-02, name: "Labor Day"}
+  - {date: 2024-11-28, name: "Thanksgiving"}
+  - {date: 2024-12-25, name: "Christmas"}
+  - {date: 2025-01-01, name: "New Year's Day"}
+  - {date: 2025-01-20, name: "MLK Day"}
+  - {date: 2025-02-17, name: "Presidents' Day"}
+  - {date: 2025-04-18, name: "Good Friday"}
+  - {date: 2025-05-26, name: "Memorial Day"}
+  - {date: 2025-06-19, name: "Juneteenth"}
+  - {date: 2025-07-04, name: "Independence Day"}
+  - {date: 2025-09-01, name: "Labor Day"}
+  - {date: 2025-11-27, name: "Thanksgiving"}
+  - {date: 2025-12-25, name: "Christmas"}
+  - {date: 2026-01-01, name: "New Year's Day"}
+  - {date: 2026-01-19, name: "MLK Day"}
+  - {date: 2026-02-16, name: "Presidents' Day"}
+  - {date: 2026-04-03, name: "Good Friday"}
+  - {date: 2026-05-25, name: "Memorial Day"}
+  - {date: 2026-06-19, name: "Juneteenth"}
+  - {date: 2026-07-04, name: "Independence Day"}
+  - {date: 2026-09-07, name: "Labor Day"}
+  - {date: 2026-11-26, name: "Thanksgiving"}
+  - {date: 2026-12-25, name: "Christmas"}
