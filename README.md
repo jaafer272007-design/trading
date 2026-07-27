@@ -63,6 +63,31 @@ Once `core.hooksPath` is set, `hooks/pre-push` runs automatically before every
 order, exiting non-zero on the first failure with the specific gate and rule
 it enforces.
 
+## Scripts in `scripts/`
+
+Two of these are **instruments, not pipeline code**. They run on the Windows
+machine that hosts the MetaTrader 5 terminal, import nothing from this
+repository, and are excluded from `mypy`'s file set because nothing here can
+import them either. They exist because the data layer's design depends on
+facts about the broker's feed that cannot be looked up.
+
+| Script | What it does | What it must never do |
+|---|---|---|
+| `mt5_probe.py` | Measures the feed: history depth, bar density by year, gap census, spread-field recording depth, and which DST rule the server clock follows. Prints a report and nothing else. | Write any file, ingest, export, or transform. Every number it prints is `[MEASURED]` or explicitly `[ESTIMATE]`. |
+| `capture_ticks.py` | Records live bid/ask ticks, append-only, one file per server day with a hash-chain sidecar. Resumes after interruption and survives reboots under Task Scheduler. | Write inside a git repository — it checks and refuses. Nothing it produces enters the pipeline until ingested through the normal path. |
+| `run_h001_harness_validation.py` | Runs the shuffled-labels harness against the leak-fixture suite and reports which modes trip. Pipeline code; this one is in the evaluation path. | — |
+
+Neither instrument reads, stores, or prints credentials. Both attach to a
+terminal that is already logged in, and the account login is masked in every
+line they emit.
+
+`capture_ticks.py` exists to close **H-005**, which registers the project's
+one live deviation from `EVALUATION.md` §10: the cost model's spread cannot be
+calibrated, because genuine bid/ask history for this feed is about two months
+deep against eleven years of usable bars. Until that capture matures, backtests
+run against a pessimistic constant floor and report a breakeven spread beside
+every result. See `HYPOTHESES.md` §5.
+
 ## Status
 
 This repository is research infrastructure: a data layer, a feature layer with
