@@ -73,11 +73,23 @@ def direction_label(
     must be stated rather than left implicit, because an undefined tie
     convention is a silent asymmetry in the base rate.
 
-    The final ``horizon`` rows have no forward data and are ``NaN``. They are
-    never imputed (``DATA_CONTRACT.md`` §6).
+    A label is ``NaN`` in two cases, both required by H-001 as registered:
+
+    * the final ``horizon`` rows, which have no forward data;
+    * any row whose forward window ``[T, T+horizon]`` touches a bar marked
+      invalid, when the frame carries a ``valid`` column.
+
+    The second case is why this reads ``valid`` automatically rather than
+    taking it as an argument. It was originally written without it, which was
+    correct on synthetic bars — they have no invalid bars — and silently wrong
+    on the real snapshot, which has twelve. A caller who has to remember to
+    pass validity is a caller who will eventually not, and the resulting
+    labels are computed across a hole and look perfectly ordinary.
+
+    Values are never imputed (``DATA_CONTRACT.md`` §6).
 
     Args:
-        df: Bar series with a ``close`` column.
+        df: Bar series with a ``close`` column, and optionally ``valid``.
         horizon: Forward horizon in bars. Must be positive.
 
     Returns:
@@ -98,11 +110,52 @@ def direction_label(
     for i in range(n_bars - horizon):
         out[i] = 1.0 if close[i + horizon] > close[i] else 0.0
 
+    if "valid" in df.columns:
+        from data.classify import label_validity
+
+        usable = label_validity(df["valid"].to_numpy(dtype=np.bool_), horizon)
+        out[~usable] = np.nan
+
     return pd.Series(out, index=df.index, name=f"direction_{horizon}")
+
+
+def labels_for_snapshot(df: pd.DataFrame, horizon: int = DEFAULT_HORIZON) -> pd.Series:
+    """The evaluation path's entry point. Requires validity to be present.
+
+    :func:`direction_label` tolerates a frame with no ``valid`` column,
+    because synthetic fixtures legitimately have none. That tolerance is
+    exactly what would let a real run compute labels across a hole without
+    anything saying so, so the path that produces a *result* uses this
+    instead, and it refuses.
+
+    Args:
+        df: A derived snapshot frame.
+        horizon: Forward horizon in bars.
+
+    Returns:
+        The label series.
+
+    Raises:
+        ValueError: If the frame carries no ``valid`` column.
+    """
+    if "valid" not in df.columns:
+        raise ValueError(
+            "labels_for_snapshot requires a 'valid' column. A frame without "
+            "one cannot say whether a forward window spans a hole, and H-001 "
+            "registers the label as undefined where it does. If this is "
+            "synthetic data, it is not admissible evidence for H-001 anyway "
+            "(see the Data requirement clause) — call direction_label."
+        )
+    return direction_label(df, horizon)
 
 
 def summarize(labels: pd.Series, df: pd.DataFrame, horizon: int) -> LabelSummary:
     """Describe a label series, including the tie rate.
+
+    The tie count is over **defined** labels only, so ``tie_rate`` has the
+    same denominator as ``base_rate``. Counting ties across rows whose label
+    is undefined would make the two rates describe different populations
+    while being printed side by side.
 
     Args:
         labels: Output of :func:`direction_label`.
@@ -118,7 +171,7 @@ def summarize(labels: pd.Series, df: pd.DataFrame, horizon: int) -> LabelSummary
 
     ties = 0
     for i in range(len(close) - horizon):
-        if close[i + horizon] == close[i]:
+        if defined[i] and close[i + horizon] == close[i]:
             ties += 1
 
     return LabelSummary(

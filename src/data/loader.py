@@ -30,7 +30,7 @@ from data.calendar import (
     MarketCalendar,
     load_calendar,
 )
-from data.snapshot import read_manifest
+from data.snapshot import INVARIANT_NAMES, read_manifest
 
 
 class LoaderError(RuntimeError):
@@ -94,6 +94,57 @@ def assert_snapshot_matches_calendar(
         )
 
 
+def assert_conversion_was_checked(snapshot_dir: Path) -> dict[str, str]:
+    """Refuse a snapshot whose manifest does not record the invariant run.
+
+    ``write_snapshot`` cannot produce a snapshot that failed a check — the
+    check raises before anything is written. This guards the other case: a
+    snapshot built by older code, by hand, or by a path that skipped the
+    checks entirely. Those are indistinguishable from a good one on disk, and
+    the whole point of recording the outcome is that the loader can tell.
+
+    An ``insufficient`` result is not a failure and does not block loading. It
+    is returned so a caller can say which checks actually ran, which is the
+    difference between four passes and two passes and two abstentions.
+
+    Args:
+        snapshot_dir: Snapshot directory.
+
+    Returns:
+        The recorded per-check outcomes.
+
+    Raises:
+        LoaderError: If the record is absent, incomplete, or records a failure.
+    """
+    recorded = read_manifest(snapshot_dir / "manifest.json").get("invariants")
+    if not isinstance(recorded, dict) or not recorded:
+        raise LoaderError(
+            f"{snapshot_dir}/manifest.json has no invariants record. The "
+            f"post-conversion checks either did not run or were not written "
+            f"down, and those are the same thing to anyone reading this later. "
+            f"Re-derive the snapshot."
+        )
+
+    missing = [name for name in INVARIANT_NAMES if name not in recorded]
+    if missing:
+        raise LoaderError(
+            f"{snapshot_dir}: the invariants record is missing {missing}. A "
+            f"partial record is worse than none — it reads as a full pass."
+        )
+
+    failed = {
+        name: outcome
+        for name, outcome in recorded.items()
+        if outcome != "pass" and not str(outcome).startswith("insufficient")
+    }
+    if failed:
+        raise LoaderError(
+            f"{snapshot_dir} records failing conversion checks: {failed}. "
+            f"Nothing may read a bar out of it."
+        )
+    return {str(k): str(v) for k, v in recorded.items()}
+
+
 def load_full_snapshot(snapshot_dir: Path) -> pd.DataFrame:
     """Load every row, including out-of-window bars: audit use only.
 
@@ -124,9 +175,10 @@ def load_window(
 ) -> pd.DataFrame:
     """Load the bars a feature is allowed to see.
 
-    Three gates, all before the caller gets anything: the calendar is frozen,
-    the snapshot was derived under it, and out-of-window rows are dropped
-    rather than flagged.
+    Four gates, all before the caller gets anything: the calendar is frozen,
+    the snapshot was derived under it, its manifest records that the
+    post-conversion invariants ran, and out-of-window rows are dropped rather
+    than flagged.
 
     Args:
         snapshot_dir: Snapshot directory.
@@ -145,6 +197,7 @@ def load_window(
     cal = calendar if calendar is not None else load_calendar()
     assert_calendar_is_frozen(cal)
     assert_snapshot_matches_calendar(snapshot_dir, cal)
+    assert_conversion_was_checked(snapshot_dir)
 
     frame = load_full_snapshot(snapshot_dir)
     frame = frame[frame["in_window"].astype(bool)]

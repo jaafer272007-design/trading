@@ -656,12 +656,81 @@ phase.
 > and half dense. It is an artefact of the transition, not a defect, and it falls outside
 > the window under either reading.
 
+**Amended 2026-07-27, first full ingest: the window spans three session eras, and era
+becomes an explicit term**
+
+> This amendment adds a term. It does not move `window_start`, relax a condition, or
+> change what the gate asserts.
+>
+> The first ingest of the complete H1 export showed something no fixture could have: the
+> feed does not have one session structure across this window. It has three.
+>
+> `[MEASURED]` `scripts/report_session_eras.py` over
+> `data/raw/GOLD-H1-20080311-20260727.csv`, counting bars per server day — a measurement
+> that uses no conversion and no convention:
+>
+> | era | daily break | evidence |
+> |---|---|---|
+> | 2015-09-11 → 2017-10-06 | one hour, 17:00 New York | 23-bar days |
+> | **2017-10-07 → 2022-10-20** | **none** | **936 Mon–Thu days carrying all 24 hours** |
+> | 2022-10-21 → present | one hour, 17:00 New York | 23-bar days |
+>
+> The populations do not interleave. 1,079 Mon–Thu days carry 23 bars and 936 carry 24,
+> excluding 152 days inside US/EU daylight-saving mismatch windows, which carry no era
+> information because a whole server hour is absent on them in every era. Each boundary
+> falls on a single weekend: the last 23-bar day before the middle era is Fri 2017-10-06
+> and the first 24-bar day is Mon 2017-10-09; the last 24-bar day is Thu 2022-10-20 and
+> the first 23-bar day is Fri 2022-10-21.
+>
+> **Both boundaries fall inside the registered window**, and that is why the term exists.
+> This is not an observation about the feed's prehistory that the window already excludes
+> — it is a change in what a "session" means, twice, in the middle of the span every
+> result will be computed over.
+>
+> **Decision: keep the full window, add era as an explicit term.**
+>
+> | option | why not |
+> |---|---|
+> | restrict to one era | Discards data for no gain. The longest era is 936 days against 2,805; the K-6 headroom this gate was registered to establish would go with it. |
+> | accept it silently | A session-relative feature would measure different things on either side of 2017-10-07 with **nothing recording that**. Silence is the failure mode this whole file exists to prevent — a result whose `n` came from a span nobody described. |
+> | **era as a term** | Makes the difference visible and measurable rather than latent. If era has no effect, that is a finding with a number attached. If it does, the term is what shows it. |
+>
+> Restricting is the conservative-looking option and is the wrong one for the same reason
+> §5.7 forbids disappearing inconvenient data: the era change is a property of the world
+> and dropping two thirds of the window does not make it go away, it makes it unmeasurable.
+>
+> **What the term is**
+>
+> `session_era` is carried in the derived frame as a first-class column — the era's start
+> date, one of three values, assigned from the frozen calendar rather than re-derived. It
+> is a **property of the bar**, alongside `valid` and `in_window`, not a feature: nothing
+> computes it, it is read off the declaration, and it changes only when the calendar
+> changes.
+>
+> Any model fitted on this window either includes it or states that it does not and why.
+> Any result reported over this window states the era composition of its sample in the
+> same place it states `n`, by the same rule as condition (iii).
+>
+> **What this amendment does not settle**
+>
+> The era boundaries rest on evidence internal to this project. `REVIEW_ITEMS.md` **R-001**
+> is open against them and blocks registering any session-relative feature until they are
+> checked against a source outside this feed. The term is unblocked by that review: it
+> records that the eras exist and lets their effect be measured, and if the review moves a
+> boundary the term is recomputed. That is exactly the property a term has and a feature
+> that bakes the dates in does not.
+
 **Guardrail — what this must not become**
 
 > `window_start` may be moved **later** without a new hypothesis; a shorter window is
 > conservative and cannot manufacture an edge. Moving it **earlier requires a new
 > hypothesis ID**, and moving it after seeing a result that the later start killed is
 > hypothesis laundering under `RESEARCH.md` §5.2 whatever the accompanying justification.
+>
+> The era term is not a knob. **Dropping it after seeing a result it made worse is the
+> same laundering**, and is harder to spot because removing a term reads as simplification
+> rather than as selection. If a model is fitted without it, that is stated in the result
+> alongside `n`, and the reason is stated too.
 >
 > The sparse era is **not deleted**. It stays in the raw snapshot, hashed and manifested
 > like everything else. It is excluded from the evaluation window, which is a statement
@@ -682,8 +751,18 @@ phase.
 
 - **Date frozen:** 2026-07-27, `window_start` = 2015-09-11, from a cliff measurement that
   reported zero one-bar-era days after the first full day.
-- **Pending for `STANDING`:** conditions (i)–(iv) become build-enforced when the loader and
-  manifest writer exist. Until then the date is frozen but nothing asserts it, because
-  there is no code yet that could violate it.
+- **Era term added:** 2026-07-27, on the first ingest of the full export. Three session
+  eras, two boundaries inside the window. `session_era` is a derived-frame column.
+- **Conditions (i)–(iv) are now build-enforced.** The loader and manifest writer exist:
+  `src/data/loader.py` refuses out-of-window rows at load (iv), and
+  `src/data/snapshot.py` writes `window_start` and `window_end` into every manifest (i),
+  with `window_end` the last complete day and never the in-progress one. Condition (ii)
+  holds by construction — the window comes from the frozen calendar. Condition (iii) is a
+  reporting discipline and stays at review, like `REPRODUCIBILITY.md` §9.
+- **Pending for `STANDING`:** nothing further in the data layer. The remaining gap is that
+  no evaluation run exists yet to carry a manifest, so (i) and (iii) have no runs to be
+  asserted against.
+- **Blocked alongside:** `REVIEW_ITEMS.md` R-001, against the era boundaries. Open. It does
+  not block this gate or the term; it blocks registering a session-relative feature.
 
 <!-- H-007 onward -->

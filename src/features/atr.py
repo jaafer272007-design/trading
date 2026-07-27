@@ -92,6 +92,15 @@ class ATR:
         """Zero: ATR at bar ``T`` is knowable at the close of bar ``T``."""
         return 0
 
+    @property
+    def session_relative(self) -> bool:
+        """Reads no session boundary — only a rolling window of bars.
+
+        Returns:
+            False.
+        """
+        return False
+
     def compute(self, df: pd.DataFrame) -> pd.Series:
         """Compute ATR over ``df``.
 

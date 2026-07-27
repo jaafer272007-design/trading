@@ -53,7 +53,25 @@ SCHEMA_VERSION: Final = 1
 #: human must confirm the world changed before the number here is updated.
 #: Updating it to silence a failure is the defect this exists to prevent.
 RECORDED_CALENDAR_SHA256: Final = (
-    "c1152b3fd18dcd9ac53e87007936b43fd78554f43729c50725c676349eb1a387"
+    "38114b46ded97a92e76e56d75b4dd923f1a6cded3c2e7b2ecfc2dbdb156bdd59"
+)
+
+#: Every hash this file has carried, oldest first, with why it moved. Kept
+#: because the guard above is only as good as the record of when it was
+#: deliberately stepped past: a bare constant that someone edits shows nothing
+#: in a later diff except a number changing, which is exactly what a silenced
+#: failure looks like.
+CALENDAR_HISTORY: Final = (
+    (
+        "c1152b3fd18dcd9ac53e87007936b43fd78554f43729c50725c676349eb1a387",
+        "initial freeze, 2026-07-27, from scripts/mt5_probe.py",
+    ),
+    (
+        "38114b46ded97a92e76e56d75b4dd923f1a6cded3c2e7b2ecfc2dbdb156bdd59",
+        "added session.eras — the first ingest of the full H1 export showed "
+        "the daily break absent between 2017-10-07 and 2022-10-20, which the "
+        "single daily_break_hour declaration had generalised over",
+    ),
 )
 
 VALID_CLOCK_RULES: Final = frozenset({"eu", "us", "fixed"})
@@ -124,6 +142,21 @@ def _require_hour(block: Any, key: str, where: str) -> int:  # noqa: ANN401
 
 
 @dataclass(frozen=True)
+class SessionEra:
+    """A span over which the session's shape was constant.
+
+    The feed does not have one session structure. It has three, and the
+    boundaries are inside H-006's evaluation window. Declaring them here makes
+    the change visible to anything that cares; leaving them out made the
+    calendar quietly claim a uniformity the data does not have.
+    """
+
+    start: date
+    daily_break: bool
+    note: str
+
+
+@dataclass(frozen=True)
 class MarketCalendar:
     """Everything the data layer needs to interpret a server timestamp.
 
@@ -142,7 +175,41 @@ class MarketCalendar:
     close_hour_mismatch: int
     window_start: date
     holidays: dict[date, str]
+    eras: tuple[SessionEra, ...]
     sha256: str
+
+    # -- session eras ------------------------------------------------------
+
+    def era_for(self, day: date) -> SessionEra | None:
+        """The session era a date falls in.
+
+        Args:
+            day: A calendar date on the server's clock.
+
+        Returns:
+            The era, or ``None`` for a date before the first declared era —
+            which is the sparse pre-window period, where the question does
+            not arise.
+        """
+        found: SessionEra | None = None
+        for era in self.eras:
+            if era.start <= day:
+                found = era
+            else:
+                break
+        return found
+
+    def has_daily_break(self, day: date) -> bool:
+        """Whether a whole-hour daily break is expected on a date.
+
+        Args:
+            day: A calendar date on the server's clock.
+
+        Returns:
+            False outside every declared era, where nothing is claimed.
+        """
+        era = self.era_for(day)
+        return era.daily_break if era is not None else False
 
     # -- daylight saving ---------------------------------------------------
 
@@ -352,6 +419,17 @@ def load_calendar(path: Path = CALENDAR_PATH) -> MarketCalendar:
             raise CalendarError(f"holidays[{i}]: {day} listed twice")
         holidays[day] = name
 
+    eras_raw = _require(session, "eras", list, "session")
+    eras: list[SessionEra] = []
+    for i, entry in enumerate(eras_raw):
+        eras.append(
+            SessionEra(
+                start=_require(entry, "start", date, f"session.eras[{i}]"),
+                daily_break=_require(entry, "daily_break", bool, f"session.eras[{i}]"),
+                note=_require(entry, "note", str, f"session.eras[{i}]"),
+            )
+        )
+
     symbol_block = _require(raw, "symbol", dict, "root")
     server_block = _require(raw, "server", dict, "root")
     window_block = _require(raw, "window", dict, "root")
@@ -368,6 +446,7 @@ def load_calendar(path: Path = CALENDAR_PATH) -> MarketCalendar:
         close_hour_mismatch=_require_hour(close_block, "mismatch", "session.close"),
         window_start=_require(window_block, "start", date, "window"),
         holidays=holidays,
+        eras=tuple(eras),
         sha256=calendar_sha256(path),
     )
     _check_internal_consistency(cal)
@@ -428,3 +507,33 @@ def _check_internal_consistency(cal: MarketCalendar) -> None:
 
     if not cal.holidays:
         raise CalendarError("holidays: empty. A vacuous calendar confirms nothing.")
+
+    if not cal.eras:
+        raise CalendarError(
+            "session.eras: empty. The feed's session structure changed twice "
+            "inside the evaluation window; a calendar that declares no eras is "
+            "claiming a uniformity the data does not have."
+        )
+
+    # Ordered and strictly increasing, so era_for's linear scan is correct and
+    # two eras cannot claim the same day.
+    for previous, current in zip(cal.eras, cal.eras[1:], strict=False):
+        if current.start <= previous.start:
+            raise CalendarError(
+                f"session.eras: starts must strictly increase, but "
+                f"{previous.start} is followed by {current.start}"
+            )
+        if current.daily_break == previous.daily_break:
+            raise CalendarError(
+                f"session.eras: the era starting {current.start} declares the "
+                f"same daily_break as the one before it. An era boundary that "
+                f"changes nothing is either a typo or a missing field, and it "
+                f"makes the count of eras meaningless."
+            )
+
+    if cal.eras[0].start > cal.window_start:
+        raise CalendarError(
+            f"session.eras: the first era starts {cal.eras[0].start}, after "
+            f"window_start {cal.window_start}. Every in-window bar must fall "
+            f"in a declared era or nothing knows what session it belongs to."
+        )
