@@ -604,15 +604,40 @@ phase.
 > exactly, which is what a **clean cliff** looks like and not what a ramp looks like.
 >
 > That is consistent, not confirmed: 78 scattered dense days would produce the same total.
-> The distinguishing measurement is the count of sparse days occurring *after* the first
-> dense day — zero for a cliff, non-zero for a ramp — and the probe now reports it
-> directly (`report_density_boundary`).
+> The distinguishing measurement is the count of days from the **one-bar-a-day era**
+> occurring *after* the first full day — zero for a cliff, non-zero for a ramp.
 >
-> **Provisional `window_start` = 2015-09-11**, pending that re-run. If the re-run shows a
-> ramp, the start moves to the day after the **last** sparse day, not the first dense one:
-> a window opening inside a ramp admits days that cannot carry a label, and moving it
-> later is the conservative direction. The rule is registered here; only the date is
-> pending, and it is filled from a measurement rather than chosen.
+> **Amended 2026-07-27, second run.** The first version of that measurement reported a
+> ramp running to the present day, and it was wrong twice over. Both defects are recorded
+> because both would have set this window silently:
+>
+> 1. **Two populations were merged.** It split days at the dense threshold and called
+>    everything below it "sparse", so ~20 ordinary **short trading days** — holiday
+>    sessions carrying 16–19 bars, scattered through the dense era — were counted as
+>    sparse-era days. The era therefore appeared never to end.
+> 2. **The in-progress day set the boundary.** The probe runs mid-session, so the final
+>    calendar day is short by construction. It became the "last sparse day", and the rule
+>    "start after the last sparse day" would have set `window_start` to **tomorrow** — an
+>    empty window, produced by a rule that reads as conservative.
+>
+> The corrected measurement uses three populations and drops the final day. This matters
+> beyond the date, because it separates **two different exclusion mechanisms** that the
+> merged version could not distinguish:
+>
+> | | mechanism | what it excludes |
+> |---|---|---|
+> | **the window** | `window_start`, applied at load | the one-bar-a-day era — a span with no data |
+> | **per-day validity** | bar count on the day itself | short trading days — real sessions too short for a 24-bar label |
+>
+> A short holiday session inside the dense era is not an era question and must not move
+> the window. It is excluded on its own merits, one day at a time, and the days around it
+> are unaffected. Conflating the two is what produced the false ramp.
+>
+> **`window_start` remains PROVISIONAL at 2015-09-11 and is NOT frozen.** The corrected
+> measurement has not yet been run against the live feed. If it reports a cliff, that date
+> is frozen. If it reports a genuine ramp — one-bar-era days genuinely interleaved with
+> full days — the start moves to the day after the **last** such day, which is the
+> conservative direction.
 >
 > The gap census places a 10-bar hole at 2015-09-10 — the boundary day itself, half sparse
 > and half dense. It is an artefact of the transition, not a defect, and it falls outside
@@ -642,7 +667,9 @@ phase.
 
 --- OPEN ---
 
-- **Pending:** confirm cliff vs ramp from `report_density_boundary`, then freeze the date
-  and move to `STANDING`.
+- **Pending:** re-run the corrected `report_density_boundary` against the live feed,
+  confirm cliff vs ramp, then freeze the date and move to `STANDING`. Not frozen on the
+  numbers from either run so far — the first was produced by an instrument with two
+  defects in this exact computation.
 
 <!-- H-007 onward -->

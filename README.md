@@ -81,6 +81,16 @@ Neither instrument reads, stores, or prints credentials. Both attach to a
 terminal that is already logged in, and the account login is masked in every
 line they emit.
 
+**Read the correction log at the top of `mt5_probe.py` before trusting any
+number it prints.** Across three fixes to the instrument — against unchanged
+broker history — its count of "candidate data defects" went 223 → 73 → 7 → 2,
+and at every stage the output was fluent, internally consistent, and wrong.
+It is the clearest evidence this project has that a measurement tool
+manufactures findings until the tool itself is tested. Every classification
+the script now makes is checked against something outside itself: a second
+anchor, a published exchange calendar, or a reconciliation that must close to
+zero — and it reports UNDETERMINED rather than choosing when those disagree.
+
 `capture_ticks.py` exists to close **H-005**, which registers the project's
 one live deviation from `EVALUATION.md` §10: the cost model's spread cannot be
 calibrated, because genuine bid/ask history for this feed is ~0.4 years deep
