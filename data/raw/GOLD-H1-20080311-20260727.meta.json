@@ -1,0 +1,19 @@
+{
+  "account_company": "FxPro Markets Ltd.",
+  "account_login": "masked",
+  "account_server": "FxPro-MT5 Demo",
+  "converted": false,
+  "exported_host_utc": "2026-07-27T17:32:03.273782+00:00",
+  "first_epoch_server": 1205193600,
+  "last_epoch_server": 1785182400,
+  "record": "mt5_raw_export",
+  "rows": 67367,
+  "sha256": "519ecd24515495bdeb7fb1df2a3699a98ac0337be91af87fe0b218516eb4b775",
+  "symbol": "GOLD",
+  "symbol_digits": 2,
+  "symbol_point": 0.01,
+  "terminal_build": 6063,
+  "terminal_name": "MetaTrader 5",
+  "timeframe": "H1",
+  "timestamps": "server wall-clock as unix epoch; NOT UTC"
+}
