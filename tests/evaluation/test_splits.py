@@ -214,3 +214,46 @@ def test_rejects_invalid_geometry(kwargs: dict[str, int], match: str) -> None:
 
     with pytest.raises(ValueError, match=match):
         walk_forward_folds(**base)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# The registered fold geometry
+#
+# H-001's split point is a researcher degree of freedom, registered in
+# HYPOTHESES.md before any run. A registered number that lives only in a
+# script can drift from the registry silently, and the drift is invisible in a
+# result — the manifest would name H-001 while the run used a geometry H-001
+# does not describe.
+# ---------------------------------------------------------------------------
+
+
+def test_the_split_point_matches_the_registered_value() -> None:
+    """The code and the registry must agree, checked rather than trusted."""
+    import re
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from run_h001 import FIRST_TEST_FRACTION  # type: ignore[import-not-found]
+
+    registry = (Path(__file__).resolve().parents[2] / "HYPOTHESES.md").read_text(
+        encoding="utf-8"
+    )
+    declared = re.findall(r"`FIRST_TEST_FRACTION = ([0-9.]+)`", registry)
+    assert declared, "HYPOTHESES.md does not register FIRST_TEST_FRACTION"
+    assert all(float(value) == FIRST_TEST_FRACTION for value in declared), (
+        f"HYPOTHESES.md registers {declared}, the code uses "
+        f"{FIRST_TEST_FRACTION}. Changing the split point requires a new "
+        f"hypothesis ID, not an edit to one of the two places it is written."
+    )
+
+
+def test_the_split_point_is_inside_the_bracket_the_amendment_argues() -> None:
+    """0.30-0.60. Past 0.661 the whole test set sits in one session era."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from run_h001 import FIRST_TEST_FRACTION
+
+    assert 0.30 <= FIRST_TEST_FRACTION <= 0.60
