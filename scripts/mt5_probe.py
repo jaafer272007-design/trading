@@ -39,6 +39,59 @@ one-bar convention mismatch a leak that is enough on its own, and because §6
 forbids silent imputation, which requires knowing which absent bars are
 market closures and which are real holes.
 
+Correction log — what this instrument got wrong
+-----------------------------------------------
+
+Kept because it is the clearest evidence this project has produced that **a
+measurement tool manufactures findings until the tool itself is tested.**
+Every number below is a count of "candidate data defects" from the same
+unchanged broker history. Only the instrument changed.
+
+===========  ===================================================  ==========
+in-session   defect in the instrument                             after fix
+holes
+===========  ===================================================  ==========
+**223**      Daily breaks classified by a single modal hour. The
+             server clock puts the break an hour earlier in the
+             weeks when New York has changed over and Europe has
+             not, so every break in those weeks was refiled as a
+             hole. ~150 false defects, all in March and late
+             October — exactly where a reader hunting a DST
+             artefact would find them and believe them.            **73**
+**73**       No notion of an early close. A session that ends
+             early and resumes on schedule is a closure, but the
+             census saw only "a multi-bar gap inside a session"
+             and called it a defect. All of them were US market
+             holidays.                                              **7**
+**7**        No independent reference. The remaining holes were
+             reported as unexplained when five of the seven sit
+             on the day after Christmas or New Year — visible
+             immediately against the published CME/COMEX
+             calendar, which the instrument did not consult.        **2**
+===========  ===================================================  ==========
+
+Three defects, a 99% reduction, and at every stage the output was fluent,
+internally consistent, and wrong. Nothing in the first report announced that
+223 was a number about the instrument rather than about the feed.
+
+The same failure hit the DST test, where it mattered more. It reported
+"TRACKS DST — US RULE" from a bucket split 95 to 94 — a four-week margin on a
+coin toss — and the section's own residual check confirmed the verdict,
+because that check measured deviation from the very mode that was arbitrary.
+A second anchor is what broke the tie, not more data.
+
+And it hit the density boundary, which conflated the one-bar-a-day era with
+ordinary short holiday sessions, declared a ramp that ran to the present day,
+and would have set the registered evaluation window to start tomorrow.
+
+The lesson is in ``EVALUATION.md`` §5 already, for models: a gate that has
+never fired is indistinguishable from one that cannot fire. It applies to
+instruments. Every classification this script makes is now checked against
+something outside itself — a second anchor, a published calendar, a
+reconciliation that must close — and reports UNDETERMINED rather than
+choosing when the checks disagree.
+
+
 Requirements
 ------------
 
@@ -86,7 +139,15 @@ PROBE_WINDOW_DAYS = 30
 TICK_PROBE_WINDOW_DAYS = 3
 SUSPICIOUS_GAPS_TO_LIST = 15
 HOLIDAY_MIN_MISSING_BARS = 20
+# Share of early closes that must land on the published CME/COMEX calendar
+# before the classification is accepted. Set high: the whole value of the
+# check is that a real closure population is nearly all holidays.
+HOLIDAY_MATCH_CONFIRMS = 90.0
 BREAK_HOUR_MIN_SHARE = 0.02
+# At or below this a day belongs to the one-bar-a-day era: the feed is not
+# there. Above it and below DENSE_DAY_MIN_BARS is an ordinary short trading
+# day. The two are excluded by different mechanisms and must not be merged.
+SPARSE_ERA_MAX_BARS = 3
 SPREAD_SAMPLE_DAYS = (0, 90, 365, 730, 1095, 1460, 1825)
 
 WIDTH = 78
@@ -499,61 +560,90 @@ def report_density(rates: Any) -> None:
 def report_density_boundary(per_day: Counter[Any]) -> None:
     """Locate the sparse-to-dense boundary and say whether it is a cliff.
 
-    The per-year table shows *that* the feed changes character but not
-    *where*, and the difference decides where a registered evaluation window
-    can start. A cliff — every day sparse up to a date, every day dense after
-    it — supports a single start date. A ramp, where sparse and dense days
-    interleave for months, does not: any start date inside it silently
-    includes days that cannot carry a 24-bar label.
+    Three populations, not two. The first version of this function split days
+    at the dense threshold and called everything below it "sparse", which
+    merged two unrelated things and produced a false ramp:
 
-    The decisive number is how many sparse days survive *after* the first
-    dense day. Zero is a cliff. Anything else is a ramp whose full extent is
-    the last sparse day, not the first dense one.
+    - the **one-bar-a-day era**, where the feed simply is not there. This is
+      what the evaluation window excludes, and it is an era question.
+    - **short trading days** — holiday sessions carrying 16-19 bars. These sit
+      inside the dense era, are perfectly ordinary, and are excluded per day
+      by their own bar count. Calling them "sparse" made the era look like it
+      never ended.
+    - **full days**.
+
+    The in-progress final day is dropped outright. It is short by
+    construction — the probe runs mid-session — and letting it into the
+    boundary computation put the "last sparse day" at *today*, which made the
+    registered window start tomorrow and be empty.
 
     Args:
         per_day: Bars per calendar day.
     """
-    dense = sorted(d for d, c in per_day.items() if c >= DENSE_DAY_MIN_BARS)
-    sparse = sorted(d for d, c in per_day.items() if c < DENSE_DAY_MIN_BARS)
-    if not dense or not sparse:
+    if not per_day:
         return
-
-    first_dense, last_sparse = dense[0], sparse[-1]
-    sparse_after = [d for d in sparse if d > first_dense]
 
     print()
     print("  Sparse-to-dense boundary — cliff or ramp? [MEASURED]")
     print()
-    row("last sparse day", str(last_sparse))
-    row("first dense day", str(first_dense))
-    row("sparse days after the first dense", f"{len(sparse_after):,}")
 
-    if not sparse_after:
-        print()
-        note("CLIFF. No sparse day occurs after the first dense day, so the")
-        note("feed changes character exactly once and a single start date")
-        note(f"describes it: the dense dataset begins {first_dense}.")
+    # Drop the final calendar day: the probe runs mid-session, so it is
+    # partial by construction and says nothing about the feed's character.
+    in_progress = max(per_day)
+    counted = {d: c for d, c in per_day.items() if d != in_progress}
+    row(
+        "final day (in progress, excluded)",
+        f"{in_progress}  ({per_day[in_progress]} bars)",
+    )
+    if not counted:
         return
 
-    # A ramp. Report how long it runs and how contaminated it is, because a
-    # window that starts inside it inherits every sparse day it contains.
-    ramp = [d for d in sorted(per_day) if first_dense <= d <= last_sparse]
-    ramp_dense = sum(1 for d in ramp if per_day[d] >= DENSE_DAY_MIN_BARS)
+    era_sparse = sorted(d for d, c in counted.items() if c <= SPARSE_ERA_MAX_BARS)
+    short = sorted(
+        d for d, c in counted.items() if SPARSE_ERA_MAX_BARS < c < DENSE_DAY_MIN_BARS
+    )
+    dense = sorted(d for d, c in counted.items() if c >= DENSE_DAY_MIN_BARS)
+    if not dense or not era_sparse:
+        return
+
+    first_dense = dense[0]
+    era_after = [d for d in era_sparse if d > first_dense]
+
+    row(f"one-bar-era days (<={SPARSE_ERA_MAX_BARS} bars)", f"{len(era_sparse):,}")
+    row(
+        f"short trading days ({SPARSE_ERA_MAX_BARS + 1}-{DENSE_DAY_MIN_BARS - 1})",
+        f"{len(short):,}",
+    )
+    row(f"full days (>={DENSE_DAY_MIN_BARS} bars)", f"{len(dense):,}")
     print()
-    note(f"RAMP, not a cliff. {len(sparse_after):,} sparse days fall after the")
-    note("first dense day, so there is no single date before which the feed")
-    note("is sparse and after which it is dense.")
+    row("last one-bar-era day", str(era_sparse[-1]))
+    row("first full day", str(first_dense))
+    row("era days after the first full day", f"{len(era_after):,}")
+
     print()
-    row("ramp runs from", str(first_dense))
-    row("            to", str(last_sparse))
-    row("days in the ramp", f"{len(ramp):,}")
-    row("  of which dense", f"{ramp_dense:,}")
-    row("  of which sparse", f"{len(ramp) - ramp_dense:,}")
-    print()
-    note("A registered window must start at the LAST sparse day, not the")
-    note("first dense one. Starting inside the ramp admits days that cannot")
-    note("carry a 24-bar label, and DATA_CONTRACT §6 forbids filling them.")
-    note(f"The defensible start is the day after {last_sparse}.")
+    if not era_after:
+        note("CLIFF. No one-bar-era day occurs after the first full day, so")
+        note("the feed changes character exactly once and a single date")
+        note(f"describes it: the usable dataset begins {first_dense}.")
+    else:
+        note(f"RAMP. {len(era_after):,} one-bar-era days fall after the first")
+        note("full day, so no single date separates the two regimes. A")
+        note("registered window must start after the LAST of them,")
+        note(f"{era_sparse[-1]} — starting earlier admits days with no data.")
+
+    if short:
+        inside = [d for d in short if d > first_dense]
+        print()
+        row("short days inside the dense era", f"{len(inside):,}")
+        note("These are NOT the sparse era and do not move the boundary. A")
+        note("holiday session carrying 16-19 bars is an ordinary short day;")
+        note("it cannot carry a 24-bar label and is excluded by its own bar")
+        note("count, per day, which is a different mechanism from the window.")
+        note("Conflating the two is what turned this cliff into a false ramp.")
+        if inside:
+            shown = ", ".join(str(d) for d in inside[:8])
+            more = len(inside) - 8
+            note(f"{shown}{f' (+{more} more)' if more > 0 else ''}")
 
 
 def report_discrepancy(rates: Any, census: GapCensus) -> None:
@@ -985,6 +1075,379 @@ def modal_with_purity(counts: Counter[int]) -> tuple[int | None, float, int]:
     return hour, hits / total, hits - runner_up
 
 
+class AnchorResult(NamedTuple):
+    """One boundary anchor's three-bucket reading."""
+
+    name: str
+    n: int
+    modal: dict[str, int | None]
+    purity: dict[str, float]
+    counts: dict[str, Counter[int]]
+    verdict: str
+    detail: list[str]
+
+
+def daily_break_samples(rates: Any, dense_years: set[int]) -> list[tuple[date, int]]:
+    """Return ``(date, missing hour)`` for every one-bar session break.
+
+    This is the highest-powered anchor available and the reason it exists.
+    The weekly open supplies one observation per week; the daily rollover
+    break supplies one per trading day — roughly five times the sample — and
+    unlike the open it does not depend on a Sunday-evening bar being present.
+    A break is visible as the *absence* of a bar between two present ones, so
+    thin liquidity at the boundary cannot hide it: absence is the signal.
+
+    Args:
+        rates: Full H1 rate array.
+        dense_years: Years dense enough to carry a session break.
+
+    Returns:
+        ``(date, hour)`` pairs naming the hour that is missing.
+    """
+    times = [to_naive(r["time"]) for r in rates]
+    step = timedelta(hours=1)
+    out: list[tuple[date, int]] = []
+    for prev, nxt in pairwise(times):
+        if nxt - prev == step * 2:
+            missing = prev + step
+            if missing.year in dense_years:
+                out.append((missing.date(), missing.hour))
+    return out
+
+
+def weekly_open_samples(rates: Any, dense_years: set[int]) -> list[tuple[date, int]]:
+    """Return ``(date, hour)`` for each weekly open.
+
+    Args:
+        rates: Full H1 rate array.
+        dense_years: Years to include.
+
+    Returns:
+        ``(date, hour)`` pairs.
+    """
+    return [
+        (o.date(), o.hour) for _, o in weekly_boundaries(rates) if o.year in dense_years
+    ]
+
+
+def weekly_close_samples(rates: Any, dense_years: set[int]) -> list[tuple[date, int]]:
+    """Return ``(date, hour)`` for each weekly close.
+
+    Args:
+        rates: Full H1 rate array.
+        dense_years: Years to include.
+
+    Returns:
+        ``(date, hour)`` pairs.
+    """
+    return [
+        (c.date(), c.hour) for c, _ in weekly_boundaries(rates) if c.year in dense_years
+    ]
+
+
+def fingerprint_anchor(name: str, samples: list[tuple[date, int]]) -> AnchorResult:
+    """Run the three-bucket US/EU test on one boundary anchor.
+
+    Args:
+        name: Human-readable anchor name.
+        samples: ``(date, hour)`` observations of that boundary.
+
+    Returns:
+        The anchor's reading and its verdict.
+    """
+    counts: dict[str, Counter[int]] = {
+        BOTH_WINTER: Counter(),
+        BOTH_SUMMER: Counter(),
+        MISMATCH: Counter(),
+        IMPOSSIBLE: Counter(),
+    }
+    for day, hour in samples:
+        counts[dst_bucket(day)][hour] += 1
+
+    modal: dict[str, int | None] = {}
+    purity: dict[str, float] = {}
+    for bucket, hist in counts.items():
+        hour, share, _ = modal_with_purity(hist)
+        modal[bucket], purity[bucket] = hour, share
+
+    winter, summer, mismatch = (
+        modal[BOTH_WINTER],
+        modal[BOTH_SUMMER],
+        modal[MISMATCH],
+    )
+    n_mismatch = sum(counts[MISMATCH].values())
+    impure = [
+        b
+        for b in (BOTH_WINTER, BOTH_SUMMER, MISMATCH)
+        if modal[b] is not None and purity[b] < MIN_BUCKET_PURITY
+    ]
+
+    if winter is None or summer is None:
+        verdict, detail = "UNDETERMINED", ["a matched-season bucket is empty"]
+    elif impure:
+        verdict = "UNDETERMINED"
+        detail = [f"not unimodal: {', '.join(impure)}"]
+    elif winter != summer:
+        verdict = "FIXED OFFSET"
+        detail = [f"open moves {winter:02d}:00 winter -> {summer:02d}:00 summer"]
+    elif n_mismatch < MIN_WEEKS_PER_BUCKET:
+        verdict = "UNDETERMINED"
+        detail = [f"only {n_mismatch} observations in the US-only-summer window"]
+    elif mismatch != winter:
+        verdict = "EU RULE"
+        detail = [
+            f"constant at {winter:02d}:00 when the calendars agree, "
+            f"{mismatch:02d}:00 when only the US has changed"
+        ]
+    else:
+        verdict = "US RULE"
+        detail = [f"constant at {winter:02d}:00 in every state, including mismatch"]
+
+    return AnchorResult(name, len(samples), modal, purity, counts, verdict, detail)
+
+
+def report_anchor_fingerprints(rates: Any, dense_years: set[int]) -> None:
+    """Run the DST test against three independent boundary anchors.
+
+    The weekly open turned out to be the worst of the three for this feed and
+    was, until now, the only one the test used. Its hour depends on a bar
+    existing at the exact moment the week opens, and thin Sunday-evening
+    liquidity is common — so the detected open drifts by an hour for reasons
+    that have nothing to do with any clock. Pooled across a decade that
+    produced a bucket split 95/94 and a verdict decided by four weeks.
+
+    Two better anchors exist in the same data:
+
+    - **Weekly close.** Friday's last bar. Liquidity at the weekly close is
+      not thin, and a missing bar there is rare.
+    - **Daily session break.** The rollover hour, visible as an absence
+      between two present bars, once per trading day. Roughly five times the
+      sample of the weekly open, and immune to the failure mode above
+      because absence *is* the signal rather than something that can go
+      missing.
+
+    All three are anchored to the same New York local time, so all three must
+    give the same answer. Agreement is the verdict; disagreement means the
+    anchor-specific noise has not been understood and no rule may be frozen.
+
+    Args:
+        rates: Full H1 rate array.
+        dense_years: Years dense enough to carry a boundary.
+    """
+    anchors = [
+        fingerprint_anchor("weekly open", weekly_open_samples(rates, dense_years)),
+        fingerprint_anchor("weekly close", weekly_close_samples(rates, dense_years)),
+        fingerprint_anchor("daily break", daily_break_samples(rates, dense_years)),
+    ]
+
+    print()
+    print("  Three independent anchors, same test [MEASURED]")
+    print()
+    print("      anchor          n      winter   summer   mismatch   verdict")
+    print("      " + "-" * 70)
+    for a in anchors:
+        cells = []
+        for bucket in (BOTH_WINTER, BOTH_SUMMER, MISMATCH):
+            hour = a.modal[bucket]
+            if hour is None:
+                cells.append("  —  ")
+            else:
+                flag = "!" if a.purity[bucket] < MIN_BUCKET_PURITY else " "
+                cells.append(f"{hour:02d}:00{flag}")
+        print(
+            f"      {a.name:<13} {a.n:>6}   {cells[0]:>6}   {cells[1]:>6}   "
+            f"{cells[2]:>8}   {a.verdict}"
+        )
+    print()
+    note("'!' marks a bucket below the purity floor — its hour is a coin toss")
+    note("and its anchor's verdict is not usable. All three anchors are")
+    note("pinned to the same New York local time, so all three must agree.")
+
+    for a in anchors:
+        if a.verdict == "UNDETERMINED":
+            note(f"{a.name}: {a.detail[0]}")
+
+    usable = {a.verdict for a in anchors if a.verdict != "UNDETERMINED"}
+    print()
+    if not usable:
+        row("COMBINED VERDICT", "UNDETERMINED — no anchor is usable")
+        note("Every anchor failed its own purity check. Nothing may be frozen.")
+    elif len(usable) > 1:
+        row("COMBINED VERDICT", "UNDETERMINED — the anchors DISAGREE")
+        note(f"Usable anchors returned {sorted(usable)}, which cannot all be")
+        note("true of one clock. A disagreement means at least one anchor is")
+        note("measuring something other than the server clock, and freezing")
+        note("either answer would freeze that error. Resolve before ingesting.")
+    else:
+        rule = usable.pop()
+        agreeing = [a.name for a in anchors if a.verdict == rule]
+        row("COMBINED VERDICT", rule)
+        note(f"Agreed by: {', '.join(agreeing)}.")
+        note("The remaining anchors are UNDETERMINED, not contradictory —")
+        note("they add no evidence against this reading.")
+        note("Freeze this as a committed artifact and assert against it.")
+
+
+def easter_sunday(year: int) -> date:
+    """Return Western Easter Sunday, for Good Friday.
+
+    Anonymous Gregorian algorithm. Good Friday is the one CME/COMEX closure
+    that is not a fixed date or an n-th weekday, so it cannot be omitted from
+    a holiday check without leaving a false positive every spring.
+
+    Args:
+        year: Calendar year.
+
+    Returns:
+        Easter Sunday.
+    """
+    a, b, c = year % 19, year // 100, year % 100
+    d, e = b // 4, b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = c // 4, c % 4
+    m = (32 + 2 * e + 2 * i - h - k) % 7
+    n = (a + 11 * h + 22 * m) // 451
+    month = (h + m - 7 * n + 114) // 31
+    day = ((h + m - 7 * n + 114) % 31) + 1
+    return date(year, month, day)
+
+
+def us_market_holidays(year: int) -> dict[date, str]:
+    """Return the CME/COMEX holiday calendar for one year.
+
+    Hard-coded from the published schedule rather than derived from the data,
+    which is the point: it is an independent reference. Using it to *check*
+    the gap census turns "these look like holidays" into a measurement. If
+    the census's early closes land on these dates they are closures; if they
+    scatter across ordinary weekdays they are defects, and the difference is
+    not a judgement call.
+
+    Juneteenth became a CME holiday in 2022 and is emitted only from then.
+
+    Args:
+        year: Calendar year.
+
+    Returns:
+        Date to holiday name.
+    """
+    holidays = {
+        date(year, 1, 1): "New Year's Day",
+        nth_weekday(year, 1, 0, 3): "MLK Day",
+        nth_weekday(year, 2, 0, 3): "Presidents' Day",
+        easter_sunday(year) - timedelta(days=2): "Good Friday",
+        last_weekday(year, 5, 0): "Memorial Day",
+        date(year, 7, 4): "Independence Day",
+        nth_weekday(year, 9, 0, 1): "Labor Day",
+        nth_weekday(year, 11, 3, 4): "Thanksgiving",
+        date(year, 12, 25): "Christmas",
+    }
+    if year >= 2022:
+        holidays[date(year, 6, 19)] = "Juneteenth"
+    return holidays
+
+
+def holiday_name(day: date) -> str | None:
+    """Name the US market holiday on or adjacent to ``day``.
+
+    Adjacency matters. A holiday closes the session that *precedes* it as
+    well — the early close on the trading day before Christmas is caused by
+    Christmas — and the reopening session after a multi-day closure is
+    short for the same reason. Requiring an exact match would reject those
+    and send genuine closures back to the defect pile.
+
+    Args:
+        day: A calendar date.
+
+    Returns:
+        The holiday name, suffixed for an adjacent match, or ``None``.
+    """
+    for offset in (0, -1, 1, -2, 2):
+        candidate = day + timedelta(days=offset)
+        name = us_market_holidays(candidate.year).get(candidate)
+        if name is not None:
+            return name if offset == 0 else f"{name} (adjacent)"
+    return None
+
+
+def report_holiday_check(
+    early_close_days: frozenset[date], suspicious_days: frozenset[date]
+) -> None:
+    """Test the early-close reading against the published holiday calendar.
+
+    The gap census's own output says to do this before accepting that early
+    closes are closures. Doing it here rather than by eye makes it a number
+    that appears on every run.
+
+    Args:
+        early_close_days: Dates the census classified as early closes.
+        suspicious_days: Dates it left as candidate defects.
+    """
+    header("5b. HOLIDAY CHECK — are the early closes really closures?")
+
+    if not early_close_days:
+        print("  no early closes to check")
+        return
+
+    matched = {d: holiday_name(d) for d in sorted(early_close_days)}
+    hits = {d: n for d, n in matched.items() if n is not None}
+    misses = [d for d, n in matched.items() if n is None]
+    share = 100.0 * len(hits) / len(matched)
+
+    row("early closes checked [MEASURED]", f"{len(matched):,}")
+    row("on a US market holiday", f"{len(hits):,}  ({share:.1f}%)")
+    row("on an ordinary weekday", f"{len(misses):,}")
+    print()
+    if share >= HOLIDAY_MATCH_CONFIRMS:
+        note(f"CONFIRMED. {share:.1f}% land on the published CME/COMEX")
+        note("calendar, which no scatter of data defects would do. These are")
+        note("closures: their decisions are excluded as closed-market, and")
+        note("no data is marked invalid under DATA_CONTRACT §6.")
+    else:
+        note(f"NOT CONFIRMED. Only {share:.1f}% land on a market holiday, below")
+        note(f"the {HOLIDAY_MATCH_CONFIRMS:.0f}% this check requires. The early-close")
+        note("classification is not earning its name — treat these as")
+        note("candidate defects until the pattern is understood.")
+
+    if misses:
+        print()
+        print("  Early closes with NO holiday within two days:")
+        for day in misses[:SUSPICIOUS_GAPS_TO_LIST]:
+            print(f"      {day}   {day.strftime('%a')}")
+        if len(misses) > SUSPICIOUS_GAPS_TO_LIST:
+            note(f"... and {len(misses) - SUSPICIOUS_GAPS_TO_LIST} more")
+
+    by_name: Counter[str] = Counter(n for n in hits.values() if n)
+    if by_name:
+        print()
+        print("  Which holidays [MEASURED]:")
+        for name, count in by_name.most_common():
+            print(f"      {name:<28} {count:>4}")
+
+    # The same test on the leftovers: a "defect" sitting on a holiday is
+    # almost certainly a closure the census failed to classify.
+    if suspicious_days:
+        named = {d: holiday_name(d) for d in sorted(suspicious_days)}
+        still = {d: n for d, n in named.items() if n is not None}
+        print()
+        row("remaining suspicious holes", f"{len(named):,}")
+        row("  of which fall on a holiday", f"{len(still):,}")
+        if still:
+            note("These are closures the census could not classify from gap")
+            note("shape alone — the holiday calendar identifies them where")
+            note("bar timestamps could not. They are NOT defects.")
+            for day, name in list(still.items())[:SUSPICIOUS_GAPS_TO_LIST]:
+                print(f"      {day}   {name}")
+        unexplained = [d for d, n in named.items() if n is None]
+        print()
+        row("UNEXPLAINED after every check", f"{len(unexplained):,}")
+        for day in unexplained[:SUSPICIOUS_GAPS_TO_LIST]:
+            print(f"      {day}   {day.strftime('%a')}")
+        note("This is the true defect count. Only these are marked invalid")
+        note("under §6.")
+
+
 def report_dst_by_year(rates: Any, dense_years: set[int]) -> None:
     """Show the weekly open and close hour year by year.
 
@@ -1253,9 +1716,13 @@ def report_dst_fingerprint(rates: Any) -> None:
             "Conversion to UTC needs two offsets and the US switch dates.",
         ]
 
-    row("VERDICT", verdict)
+    row("weekly-open reading", verdict)
     for line in detail:
         note(line)
+    note("This is the WEEKLY OPEN alone. It is kept because it is what the")
+    note("earlier version reported, and because a disagreement between it")
+    note("and the other anchors is itself a finding. The answer is the")
+    note("COMBINED VERDICT at the end of this section.")
 
     # The residual, and the one test that makes it interpretable. A missing
     # Sunday-evening bar can only push the *detected* open later than the
@@ -1296,6 +1763,9 @@ def report_dst_fingerprint(rates: Any) -> None:
             note("Every residual opens late, which is what a missing Sunday-")
             note("evening bar or a holiday-shortened week produces. None can")
             note("be a clock movement, so none contradicts the verdict.")
+
+    print()
+    report_anchor_fingerprints(rates, dense_years)
 
     print()
     note("Whatever this says, ingestion must FREEZE the derived rule as a")
@@ -1418,6 +1888,7 @@ class GapCensus(NamedTuple):
 
     daily_breaks: int
     early_close_days: frozenset[date]
+    suspicious_days: frozenset[date]
 
 
 def report_gaps(rates: Any) -> GapCensus:
@@ -1450,7 +1921,7 @@ def report_gaps(rates: Any) -> GapCensus:
 
     if rates is None or len(rates) < 2:
         print("  insufficient H1 history for a gap census")
-        return GapCensus(0, frozenset())
+        return GapCensus(0, frozenset(), frozenset())
 
     times = [to_naive(r["time"]) for r in rates]
     step = timedelta(hours=1)
@@ -1463,7 +1934,7 @@ def report_gaps(rates: Any) -> GapCensus:
 
     if not gaps:
         print("  no gaps at all — every consecutive bar is exactly 1h apart")
-        return GapCensus(0, frozenset())
+        return GapCensus(0, frozenset(), frozenset())
 
     single = [g for g in gaps if g[2] == 1]
     single_by_hour: Counter[int] = Counter(g[0].hour for g in single)
@@ -1565,7 +2036,11 @@ def report_gaps(rates: Any) -> GapCensus:
         print()
         note("No unexplained in-session holes. Every gap is a market closure.")
 
-    return GapCensus(daily, frozenset(g[0].date() for g in early_close_list))
+    return GapCensus(
+        daily,
+        frozenset(g[0].date() for g in early_close_list),
+        frozenset(g[0].date() for g in suspicious_list),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1694,6 +2169,7 @@ def main() -> int:
         report_spread_coverage(rates)
         report_spread(mt5, symbol, depth.get("tick"))
         census = report_gaps(rates)
+        report_holiday_check(census.early_close_days, census.suspicious_days)
         report_discrepancy(rates, census)
         report_offset(mt5, symbol, rates)
         report_dst_fingerprint(rates)
