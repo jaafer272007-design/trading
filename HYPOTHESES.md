@@ -11,14 +11,14 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 5
+Registered (registry completeness) ... 6
   ├─ Accepted ....................... 0
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 4
+  └─ In flight ...................... 5
 
 N_claims (multiple-testing denom.) ... N = 2
-  ├─ gates  (not counted) ........... 3   H-001, H-002, H-005
+  ├─ gates  (not counted) ........... 4   H-001, H-002, H-005, H-006
   └─ claims (counted) ............... 2   H-003, H-004
 
 Holdout openings used ............... 0 / 3
@@ -360,13 +360,18 @@ phase.
 > That model cannot be built. It requires a historical bid/ask series, and the probe
 > establishes that no such series exists for this feed:
 >
-> - Genuine bid/ask ticks begin roughly two months back. The evaluation window is eleven
->   years of dense H1 history. Tick coverage is ~1.5% of it.
+> - Genuine bid/ask ticks begin 2026-03-02, ~0.40 years back. The usable evaluation window
+>   is **10.87 years** of dense H1 history (2015-09-11 to 2026-07-24, measured). Tick
+>   coverage is ~3.7% of it.
 > - The `spread` field on H1 bars is not a substitute. It is the spread recorded at bar
 >   close, not the spread that would have been paid on a fill, and the probe measures its
->   coverage stepping from ~0% to ~100% in a single year — the broker began recording it
->   then. Bars before that carry a zero that means *unrecorded*, and `DATA_CONTRACT.md` §6
->   forbids treating a missing value as a measured one.
+>   coverage stepping from 0.0% (2015 and earlier) to 95.7% (2016) — the broker began
+>   recording it then. Bars before that carry a zero that means *unrecorded*, and
+>   `DATA_CONTRACT.md` §6 forbids treating a missing value as a measured one.
+> - Coverage never reaches 100% even after 2016 — it runs 95.7% to 99.8% by year. So
+>   between 0.2% and 4.3% of bars in the covered era also carry an unrecorded zero, and
+>   they are **not** distinguishable from a genuine zero spread by value alone. Ingestion
+>   maps every zero in this field to `None`, in both eras, for the same §6 reason.
 > - The one spread that *is* observable is a demo quote. It reads 15 points with
 >   `median == p95 == 15.0` across a full sampled day, on a symbol whose `spread_float`
 >   flag is `True`. A floating-spread symbol showing zero variation over an entire day is
@@ -411,6 +416,38 @@ phase.
 > 3. **Retail gold spreads are commonly 20–35 points in calm conditions** at brokers of this
 >    type. A floor of 75 points sits above that band rather than inside it, which is the
 >    point: it is chosen to be uncomfortable.
+>
+> **Supporting evidence measured after registration (2026-07-27 probe run).** The `spread`
+> field is not a payable spread and is barred as a cost input, but it is a measurement of
+> *something*, and what it measures bounds how wrong the demo constant is. By year:
+>
+> | | points | $/oz | vs the 15-point demo constant |
+> |---|---|---|---|
+> | demo quote, flat all day | 15 | $0.15 | — |
+> | recorded median, 2016–2023 | 21–30 | $0.21–0.30 | **1.4–2.0× wider** |
+> | recorded median, 2024–2026 | 10–15 | $0.10–0.15 | comparable |
+> | recorded max, 2020 (COVID March) | **700** | **$7.00** | **47× wider** |
+> | recorded max, typical year | 35–57 | $0.35–0.57 | 2.3–3.8× |
+>
+> Three things follow, and none of them were available when the factor was chosen:
+>
+> 1. **The demo constant is not merely optimistic, it is below the broker's own recorded
+>    spread for the majority of the evaluation window.** In 2016–2023 the recorded median
+>    is 1.4–2.0× the demo quote. A cost model anchored on 15 points would have understated
+>    even the non-payable recorded figure.
+> 2. **The 75-point floor sits 2.5–3.6× above the recorded median.** That is the margin
+>    intended: comfortably outside the calm-market range, not inside it.
+> 3. **The floor composed with §10's event multiplier reproduces the observed crisis
+>    peak.** 75 × 10 = 750 points against a measured 2020 maximum of 700. That the
+>    pessimistic ceiling lands within 7% of the worst spread the broker ever recorded is
+>    not a derivation — the two quantities are not the same kind of thing — but it is the
+>    difference between a multiplier chosen in a vacuum and one whose implied worst case
+>    is the right order of magnitude. It also settles that the constant floor **must**
+>    keep §10's multiplier on top: the floor alone is 11% of the crisis peak.
+>
+> The 2020 figure also disposes of any argument that a flat spread is adequate. A feed
+> whose recorded spread reaches 47× its calm-market value has an event structure, and a
+> constant model cannot represent it in either direction.
 >
 > **Counter-argument, recorded because it is correct.** A multiplier not derived from
 > measurement is not evidence, and no amount of prose makes ×5 a fact. It is a choice
@@ -503,4 +540,109 @@ phase.
 - **Closes via:** a new hypothesis under exit condition (a) or (b). Never by editing this
   entry.
 
-<!-- H-006 onward -->
+### H-006 — The evaluation window is a declared boundary, not a truncation
+
+- **Registered:** 2026-07-27 13:20 UTC
+- **Class:** gate — does not count toward `N_claims`
+- **Status:** REGISTERED
+
+**What this is**
+
+> The declaration of which span of history is admissible, made once, in advance, with the
+> measurement that forced it. Not an edge claim.
+>
+> It exists because the alternative is worse than it looks. Nobody would consciously
+> decide to drop ten years of history; what happens instead is that a feature needing 24
+> bars silently returns `None` for every sparse day, the sparse days silently drop out of
+> the design matrix, and the run reports `n` without anyone noticing that `n` came from a
+> different span than the one described in the writeup. That is a truncation nobody chose
+> and nobody can audit. Registering the boundary converts it into a decision with a
+> number attached.
+
+**The measurement that forces it**
+
+> The feed advertises 18.38 years — 2008-03-11 to 2026-07-27, 67,362 H1 bars. That figure
+> describes two different datasets stored in one series:
+>
+> | era | bars/day (median) | dense days | what it can support |
+> |---|---|---|---|
+> | 2008 → 2015-09 | **1** | 0 | nothing at H1 |
+> | 2015-09 → 2026 | **23–24** | 2,785 | the full protocol |
+>
+> A day carrying one bar cannot produce a 24-bar label, an ATR, or a session feature. The
+> sparse era is not low-quality data for these purposes — it is *absent* data with a
+> timestamp. 2008–2014 contributes 1,780 bars total, fewer than a single dense month.
+>
+> Measured consequence: **2,785 dense days, 2,709 non-overlapping decisions at H=24, over
+> 10.87 years.** That clears K-6 pooled, K-6 per fold at five folds, K-6 on a 20% sealed
+> holdout, and spans 2022 with 1,614 dense days before and 1,171 after for `EVALUATION.md`
+> §11's regime split. The protocol is runnable on the dense era alone. Nothing is lost by
+> declaring the boundary except the illusion of an 18-year sample.
+
+**Primary metric & threshold — the conditions this gate asserts**
+
+> | # | Condition | Threshold |
+> |---|---|---|
+> | i | Every run in the evaluation path declares `window_start` and `window_end` in its manifest | present, or the run is **VOID** |
+> | ii | `window_start` ≥ the measured sparse/dense boundary | else **VOID** |
+> | iii | Every reported result states the window it used, in the same place it states `n` | present, or the claim is void |
+> | iv | Bars outside the declared window are **absent from the loaded frame**, not filtered downstream | asserted by test |
+>
+> Condition (iv) is the one that does the work. Filtering late leaves a window that is
+> whatever survived the last filter, which is the silent truncation this gate exists to
+> prevent. Excluding at load time makes the window a property of the data, and a feature
+> cannot quietly widen it.
+>
+> Any failure voids the run. Not a K-code — `CLAUDE.md` Hard Rule 4 reserves those for
+> `EVALUATION.md` §1, which is unchanged.
+
+**Where the boundary is — and the one thing still to confirm**
+
+> The 2026-07-27 probe run reports **78 dense days in 2015** and a first dense day of
+> **2015-09-11**. From 2015-09-11 to year end there are 80 weekdays; less Christmas and
+> New Year closures, 78. The dense count matches the trading-day count for that span
+> exactly, which is what a **clean cliff** looks like and not what a ramp looks like.
+>
+> That is consistent, not confirmed: 78 scattered dense days would produce the same total.
+> The distinguishing measurement is the count of sparse days occurring *after* the first
+> dense day — zero for a cliff, non-zero for a ramp — and the probe now reports it
+> directly (`report_density_boundary`).
+>
+> **Provisional `window_start` = 2015-09-11**, pending that re-run. If the re-run shows a
+> ramp, the start moves to the day after the **last** sparse day, not the first dense one:
+> a window opening inside a ramp admits days that cannot carry a label, and moving it
+> later is the conservative direction. The rule is registered here; only the date is
+> pending, and it is filled from a measurement rather than chosen.
+>
+> The gap census places a 10-bar hole at 2015-09-10 — the boundary day itself, half sparse
+> and half dense. It is an artefact of the transition, not a defect, and it falls outside
+> the window under either reading.
+
+**Guardrail — what this must not become**
+
+> `window_start` may be moved **later** without a new hypothesis; a shorter window is
+> conservative and cannot manufacture an edge. Moving it **earlier requires a new
+> hypothesis ID**, and moving it after seeing a result that the later start killed is
+> hypothesis laundering under `RESEARCH.md` §5.2 whatever the accompanying justification.
+>
+> The sparse era is **not deleted**. It stays in the raw snapshot, hashed and manifested
+> like everything else. It is excluded from the evaluation window, which is a statement
+> about admissibility, not about storage. `RESEARCH.md` §5.7 forbids disappearing
+> inconvenient data and that applies to bars as much as to hypotheses.
+
+**Pre-committed interpretation**
+
+> - If the re-run confirms a cliff: `window_start` is frozen at the measured first dense
+>   day and this gate moves to `STANDING`, enforced by the manifest writer and a test.
+> - If the re-run shows a ramp: `window_start` is frozen at the day after the last sparse
+>   day, by the rule above, and the ramp's extent is recorded here. Still `STANDING`.
+> - If a future feed refresh moves the boundary: that is a new hypothesis, not an edit.
+>   A boundary that moves silently is the failure this entry exists to prevent, and it
+>   would be undetectable if the value were simply re-derived each run.
+
+--- OPEN ---
+
+- **Pending:** confirm cliff vs ramp from `report_density_boundary`, then freeze the date
+  and move to `STANDING`.
+
+<!-- H-007 onward -->
