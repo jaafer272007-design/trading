@@ -18,11 +18,11 @@ Why it exists
 ``EVALUATION.md`` §10 specifies a session-dependent spread with an event
 multiplier and forbids a constant. The probe establishes that no historical
 bid/ask series exists for this feed to calibrate that from: genuine ticks go
-back about two months against eleven years of dense H1 history, and the
-``spread`` field on bars is the spread at bar-record time rather than
-anything that could have been paid. ``H-005`` registers the resulting
-deviation and names the exit condition — this capture, matured across a full
-annual cycle.
+back ~0.4 years against the 10.87 years of dense H1 history that ``H-006``
+declares admissible, and the ``spread`` field on bars is the spread at
+bar-record time rather than anything that could have been paid. ``H-005``
+registers the resulting deviation and names the exit condition — this capture,
+matured across a full annual cycle.
 
 That is the entire purpose. Every day not captured is a day of the exit
 condition that will never be recoverable, which is why this starts now and

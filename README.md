@@ -83,10 +83,14 @@ line they emit.
 
 `capture_ticks.py` exists to close **H-005**, which registers the project's
 one live deviation from `EVALUATION.md` §10: the cost model's spread cannot be
-calibrated, because genuine bid/ask history for this feed is about two months
-deep against eleven years of usable bars. Until that capture matures, backtests
-run against a pessimistic constant floor and report a breakeven spread beside
-every result. See `HYPOTHESES.md` §5.
+calibrated, because genuine bid/ask history for this feed is ~0.4 years deep
+against the 10.87 years of usable bars declared by **H-006**. Until that capture
+matures, backtests run against a pessimistic constant floor and report a
+breakeven spread beside every result. See `HYPOTHESES.md` §5.
+
+The feed advertises 18.38 years. Only 10.87 of them carry more than one bar a
+day, and H-006 registers that boundary so the shortfall is a declared decision
+rather than a truncation discovered later in a run manifest.
 
 ## Status
 
