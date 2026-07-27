@@ -146,6 +146,7 @@ phase.
 ### H-001 — Pipeline integrity under shuffled labels
 - **Registered:** 2026-07-26 14:32 UTC
 - **Operationalisation amended:** 2026-07-26 (before any run; see §2 rule 1)
+- **Fold geometry amended:** 2026-07-27 (before any run — `FIRST_TEST_FRACTION = 0.50`)
 - **Class:** gate — does not count toward `N_claims`
 - **Status:** REGISTERED
 
@@ -211,6 +212,111 @@ phase.
 > training (embargo). Evaluation decisions are spaced 24 bars apart (non-overlapping)
 > within each test fold, so the reported `n` counts effectively independent decisions
 > rather than 24× overlapping restatements of the same bet.
+
+**Amended 2026-07-27, before any run: the split point, registered**
+
+> The clauses above fix the fold *count*, the purge and embargo rule, and the decision
+> spacing. They do not fix **where the first test window opens**, and the first real-data
+> setup silently chose half the series. That is a researcher degree of freedom and it is
+> registered here rather than left in a constant, on the same footing as ε = 0.01: a
+> geometry decided after a run is geometry chosen to suit a result.
+>
+> **`FIRST_TEST_FRACTION = 0.50`.** The first test window opens at the midpoint of the
+> in-window series; the remainder is divided into 5 equal test windows.
+>
+> ---
+>
+> **What could have selected it, and what actually does**
+>
+> `[MEASURED]` `scripts/report_fold_geometry.py` over the H-001 snapshot, 65,395
+> in-window bars, 64,886 eligible. Nothing below involves labels or skill — every figure
+> is a property of the calendar and the eligibility mask, identical under any labels at
+> all.
+>
+> | split | pooled decisions | per fold | × K-6 | train fold 0 | rows/param | eras in test |
+> |---|---|---|---|---|---|---|
+> | 0.30 | 1,894 | 370–382 | 12.6 | 19,474 | 4,868:1 | 2 |
+> | 0.40 | 1,632 | 324–327 | 10.9 | 25,722 | 6,430:1 | 2 |
+> | **0.50** | **1,364** | **272–273** | **9.1** | **32,188** | **8,047:1** | **2** |
+> | 0.60 | 1,090 | 218 | 7.3 | 38,728 | 9,682:1 | 2 |
+> | 0.70 | 819 | 163–164 | 5.5 | 45,267 | 11,316:1 | **1** |
+>
+> Two of the three plausible criteria turn out not to bind, and saying so is more useful
+> than picking the number each happens to favour:
+>
+> - **K-6 headroom** (`EVALUATION.md` §1: fewer than 150 closed decisions is *no result*).
+>   Every candidate clears it by 5.5× or more pooled, and by 1.1–2.5× per fold. It does
+>   not discriminate.
+> - **Training-window adequacy.** The combiner is three features plus an intercept. Even
+>   the smallest pool is 4,868 rows per parameter — three orders of magnitude of slack.
+>   It does not discriminate either. Anyone reaching for "more training data" as the
+>   reason for a later split is reaching for a constraint that is not active.
+> - **Era composition** *does* discriminate, at one end. A split at or past **0.661** —
+>   where the 2022-10-21 era begins — confines the entire test set to a single era and
+>   makes H-006's era term unmeasurable out-of-sample. That rules out 0.70 and everything
+>   after it. It does not distinguish 0.30 from 0.60.
+>
+> **So the criteria bracket the choice to 0.30–0.60 and do not select inside it.** 0.50 is
+> registered on two grounds, both of which are weaker than a measurement and are stated as
+> such:
+>
+> 1. It is the maximin split — it maximises the smaller of the training and testing halves,
+>    which is the assumption-free choice when nothing else discriminates.
+> 2. **It is the value the dry run already published.** Moving to 0.30 now, having seen
+>    that it yields 1,894 decisions instead of 1,364, would be selecting geometry on a
+>    number produced after the setup was fixed. `n` is not binding, so there is nothing to
+>    buy — and buying it anyway is `RESEARCH.md` §5.3 in miniature.
+>
+> ---
+>
+> **Where the split lands, and which folds cross an era boundary**
+>
+> `[MEASURED]`, same run. The split falls at position **32,697 = 2021-02-08 20:00 UTC**,
+> which is **inside** the 2017-10-07 era, not on a boundary.
+>
+> | fold | test window (UTC) | n | train | test era composition |
+> |---|---|---|---|---|
+> | 0 | 2021-02-08 → 2022-03-02 | 273 | 32,188 | 2017-10-07 100% |
+> | 1 | 2022-03-02 → 2023-03-30 | 273 | 38,727 | **2017-10-07 60.4% / 2022-10-21 39.6%** |
+> | 2 | 2023-03-30 → 2024-05-08 | 273 | 45,266 | 2022-10-21 100% |
+> | 3 | 2024-05-08 → 2025-06-17 | 273 | 51,805 | 2022-10-21 100% |
+> | 4 | 2025-06-17 → 2026-07-27 | 272 | 58,344 | 2022-10-21 100% |
+>
+> **Fold 1 straddles 2022-10-21.** Its test window contains the return of the daily break,
+> so a single fold is scored across two session structures.
+>
+> **Three folds are worse than that, and it is not the straddle.** Folds 2, 3 and 4 train
+> on a pool that is 67%, 59% and 52% pre-2022 respectively, and test **entirely** in the
+> 2022-10-21 era. Their training and test halves sit in different session regimes. That is
+> exactly the condition H-006's era term was added to make visible, and it is now visible
+> in the geometry rather than only in the data.
+>
+> This is recorded, not avoided. Avoiding it requires either moving the split past 0.661 —
+> which confines the whole test set to one era, a strictly larger distortion — or aligning
+> fold edges to era boundaries, which would make fold sizes a function of the calendar and
+> couple the evaluation geometry to a declaration that `REVIEW_ITEMS.md` **R-001** says is
+> not yet externally confirmed.
+>
+> **The 2015-09-11 era never appears in a test window** under any split at or above 0.187.
+> It is training data in every fold. The era term is therefore not estimable out-of-sample
+> on that era under this geometry — a limitation of the geometry, not of the term, and one
+> that matters for a skill claim rather than for this gate.
+>
+> ---
+>
+> **What this does and does not affect for H-001 specifically**
+>
+> Under permuted labels there is no signal, so era composition cannot change what H-001
+> measures: every era is noise once the labels are shuffled, and all three features are
+> session-invariant (measured — `tests/test_causality.py` recomputes each on a scrambled
+> index and requires bit-identical output). The geometry matters here because **H-001
+> certifies the geometry it runs under.** A later evaluation using a different split does
+> not inherit this gate's result, which is the reason to register the number now rather
+> than to treat it as an implementation detail.
+>
+> **Guardrail.** `FIRST_TEST_FRACTION` may not be changed after a run without a new
+> hypothesis ID. Re-running H-001 at a different split and reporting whichever passes is
+> `EVALUATION.md` §9 — as many hypotheses as splits tried — and `RESEARCH.md` §5.3.
 
 **Estimator**
 > Hand-rolled logistic regression, fixed iteration count, no `scikit-learn`. Ships with a

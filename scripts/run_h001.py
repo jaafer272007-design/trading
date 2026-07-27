@@ -96,6 +96,19 @@ FEATURES: tuple[Feature, ...] = (
 
 N_FOLDS = 5
 
+#: Where the first test window opens, as a fraction of the in-window series.
+#:
+#: REGISTERED in HYPOTHESES.md H-001, amended 2026-07-27, before any run. It is
+#: a researcher degree of freedom in the same class as epsilon = 0.01: H-001
+#: fixes the fold count and the purge/embargo rule but not this, and the
+#: criteria that could have selected it — K-6 headroom, training adequacy —
+#: are satisfied across the whole 0.30-0.60 range and therefore select nothing.
+#:
+#: Changing it requires a new hypothesis ID. Changing it after a run is
+#: geometry chosen to suit a result, which is RESEARCH.md §5.3 whatever the
+#: accompanying reasoning.
+FIRST_TEST_FRACTION = 0.50
+
 
 def build_design(
     frame: pd.DataFrame, horizon: int
@@ -253,12 +266,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _fold_geometry(n_bars: int, n_folds: int) -> tuple[int, int]:
-    """Split the series into a warmup prefix and ``n_folds`` equal test windows.
+    """Split the series into a training prefix and ``n_folds`` equal test windows.
 
-    Half the series is held back as the first training pool. That is a
-    geometry choice made here rather than registered in H-001, which fixes the
-    fold *count* and the purge/embargo rule but not the split point; it is
-    stated in the run output so it is visible rather than buried.
+    The prefix is :data:`FIRST_TEST_FRACTION` of the series, registered in
+    H-001 before any run. See ``scripts/report_fold_geometry.py`` for the sweep
+    that argues it and ``HYPOTHESES.md`` H-001 for what it is and is not.
 
     Args:
         n_bars: Series length.
@@ -267,7 +279,7 @@ def _fold_geometry(n_bars: int, n_folds: int) -> tuple[int, int]:
     Returns:
         ``(first_test_start, test_size)``.
     """
-    first_test_start = n_bars // 2
+    first_test_start = int(n_bars * FIRST_TEST_FRACTION)
     test_size = (n_bars - first_test_start) // n_folds
     return first_test_start, test_size
 
