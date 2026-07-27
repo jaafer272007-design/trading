@@ -282,3 +282,73 @@ response to an unlabelled number is to ask where it came from before reading fur
 
 A number whose provenance cannot be established after the fact is not downgraded to
 `[ESTIMATE]`. It is **withdrawn**.
+
+---
+
+## 10. Gates Must Pass For A Statable Reason
+
+**A gate that passes for a reason nobody can state is not a passing gate.** When a
+threshold catches something, the person who set it must be able to say *why* it caught it.
+If the answer is "it happened to land on the right side of the line", the gate has not
+detected anything — it has produced a green tick that will not survive the next dataset.
+
+This is §9's sibling. §9 is about a number arriving without provenance; this is about a
+**verdict** arriving without a mechanism. Both are cases of something load-bearing being
+accepted because it looked right.
+
+### The instance
+
+`data/invariants.py` checks that payrolls activity peaks in the bar containing the 08:30
+New York release. It has a floor on how dominant that peak must be, `MIN_PEAK_SHARE`,
+whose job is to stop a mode computed from noise being read as agreement.
+
+It was first set at **0.30**. Against the four deliberately-broken conversions the suite
+runs, that produced:
+
+| mutation | peak hour | share | caught? |
+|---|---|---|---|
+| correct | 08:00 ✓ | 0.376 | — |
+| shifted ±1h | 07:00 / 09:00 ✗ | 0.384 | yes, by the **mode** |
+| fixed offset | 08:00 ✓ | 0.312 | no |
+| US transition dates | 08:00 ✓ | **0.280** | **yes, by the threshold** |
+
+The last row is the problem. That mutation puts the peak in the **correct hour** — it is
+wrong only in the four weeks a year the US and EU calendars disagree, and payrolls rarely
+lands in one. The check's actual mechanism, "the busiest hour is the release hour", did
+not detect it. The threshold fired because a share that should have been irrelevant
+happened to come in 0.02 under an arbitrary line.
+
+Keeping 0.30 was tempting: it made the coverage table look better and cost nothing. It
+would have recorded a detection nobody could explain, and any change to the sample —
+another year of data, a different symbol — would have flipped it back with no warning and
+no way to tell what had changed.
+
+The floor was lowered to **0.25**, where it does only its stated job. That mutation is
+caught decisively elsewhere, by the weekly close, at 66 of 576 weeks.
+
+### The rule
+
+When a gate fires:
+
+1. **Name the mechanism.** Which property of the data made it fire? If the answer is the
+   threshold rather than the property, that is a coincidence, not a detection.
+2. **Do not keep a threshold for a catch it was not designed to make.** Tightening a bound
+   until it catches one more case is fitting the gate to the test set, and it is the same
+   error as choosing a metric after seeing which one wins (`RESEARCH.md` §5.3).
+3. **Record the misses.** A coverage table with only hits in it cannot be checked. Blind
+   spots are asserted as tests here — see `tests/data/test_invariants.py::
+   test_the_measured_coverage_matrix_still_holds`, whose `False` cells are the point.
+4. **A gate that has never fired is indistinguishable from one that cannot.** Every guard
+   in this project ships with a demonstration that it rejects something, and where a guard
+   turns out to reject nothing, that is recorded rather than quietly tolerated —
+   `assert_release_hour_is_covered` caught none of the four mutations, so it was renamed
+   to what it actually is.
+
+### Enforcement
+
+Review, like §9. This is not a kill criterion and carries no K-code (`CLAUDE.md` Hard
+Rule 4). No linter can see the difference between a threshold that works and one that got
+lucky; only the person who chose it can, and only if they are asked.
+
+The correct response to "this gate caught the bug" is **"by what mechanism?"** — before
+believing it.

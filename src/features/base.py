@@ -81,6 +81,28 @@ class Feature(Protocol):
         """
         ...
 
+    @property
+    def session_relative(self) -> bool:
+        """Whether this feature reads where a bar sits inside its session.
+
+        True for anything referencing the session open, the session close,
+        position within the session, or bars remaining until the daily break.
+
+        Declared rather than inferred, because it cannot be inferred: a
+        feature that indexes off the calendar's session hours and one that
+        does not are the same shape from the outside.
+
+        It is load-bearing while ``R-001`` is open. This feed's session
+        structure changes twice inside H-006's evaluation window — the daily
+        break is absent between 2017-10-07 and 2022-10-20 — so a
+        session-relative feature measures a different quantity on either side
+        of that boundary, and the boundary dates themselves have not been
+        checked against any source outside this project.
+        ``tests/test_causality.py`` refuses a registry entry declaring ``True``
+        until that review closes. See ``REVIEW_ITEMS.md``.
+        """
+        ...
+
     def compute(self, df: pd.DataFrame) -> pd.Series:
         """Compute the feature over ``df``.
 

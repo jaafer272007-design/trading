@@ -131,6 +131,15 @@ class _ConstantFeature:
     lookback_bars = 1
     confirmation_lag_bars = 0
 
+    @property
+    def session_relative(self) -> bool:
+        """Reads no session boundary.
+
+        Returns:
+            False.
+        """
+        return False
+
     def compute(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(1.0, index=df.index, name=self.name)
 
@@ -151,6 +160,15 @@ class _NullsOnlyWhenTruncated:
 
     def __init__(self, full_length: int) -> None:
         self._full_length = full_length
+
+    @property
+    def session_relative(self) -> bool:
+        """Reads no session boundary.
+
+        Returns:
+            False.
+        """
+        return False
 
     def compute(self, df: pd.DataFrame) -> pd.Series:
         value = 1.0 if len(df) == self._full_length else np.nan

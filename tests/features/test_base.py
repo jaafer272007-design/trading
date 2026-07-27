@@ -12,6 +12,7 @@ class _Complete:
     version = 1
     lookback_bars = 1
     confirmation_lag_bars = 0
+    session_relative = False
 
     def compute(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(0.0, index=df.index, name=self.name)
@@ -23,6 +24,7 @@ class _MissingConfirmationLag:
     name = "missing_lag"
     version = 1
     lookback_bars = 1
+    session_relative = False
 
     def compute(self, df: pd.DataFrame) -> pd.Series:
         return pd.Series(0.0, index=df.index, name=self.name)
@@ -35,6 +37,19 @@ class _MissingCompute:
     version = 1
     lookback_bars = 1
     confirmation_lag_bars = 0
+    session_relative = False
+
+
+class _MissingSessionRelative:
+    """Declares everything except whether it reads a session boundary."""
+
+    name = "missing_session_relative"
+    version = 1
+    lookback_bars = 1
+    confirmation_lag_bars = 0
+
+    def compute(self, df: pd.DataFrame) -> pd.Series:
+        return pd.Series(0.0, index=df.index, name=self.name)
 
 
 def test_complete_declaration_satisfies_protocol() -> None:
@@ -53,3 +68,14 @@ def test_missing_confirmation_lag_does_not_satisfy_protocol() -> None:
 
 def test_missing_compute_does_not_satisfy_protocol() -> None:
     assert not isinstance(_MissingCompute(), Feature)
+
+
+def test_missing_session_relativity_does_not_satisfy_protocol() -> None:
+    """It cannot be inferred, so an omission must not default to False.
+
+    ``REVIEW_ITEMS.md`` R-001 blocks registering a session-relative feature
+    while the feed's era boundaries are unreviewed. A feature that simply did
+    not declare would slip past that block by looking harmless, which is the
+    same failure shape as an undeclared confirmation lag defaulting to zero.
+    """
+    assert not isinstance(_MissingSessionRelative(), Feature)

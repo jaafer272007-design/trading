@@ -74,6 +74,7 @@ DERIVED_COLUMNS: Final = (
     "spread_points",
     "valid",
     "in_window",
+    "session_era",
 )
 
 DEFAULT_LABEL_HORIZON_BARS: Final = 24
@@ -221,6 +222,26 @@ def build_derived(
     valid, gaps = bar_validity(server, calendar)
     in_window = np.array([ts.date() >= calendar.window_start for ts in server])
 
+    # H-006's era term, carried as a property of the bar rather than computed
+    # by anything downstream. The feed's session structure changes twice
+    # INSIDE the evaluation window — the daily break is absent between
+    # 2017-10-07 and 2022-10-20 — so a model fitted across this window is
+    # fitted across three different definitions of a session.
+    #
+    # Read off the frozen calendar, never re-derived here. A term derived from
+    # the data it qualifies could not detect the broker changing the structure
+    # again, which is the same argument the calendar makes for the clock rule.
+    #
+    # Bars before the first declared era get the empty string: the sparse era
+    # predates the declaration and the question does not arise there. They are
+    # out of window in any case.
+    session_era = np.array(
+        [
+            era.start.isoformat() if (era := calendar.era_for(ts.date())) else ""
+            for ts in server
+        ]
+    )
+
     # §6: a zero in either of these fields means UNRECORDED and is not
     # distinguishable from a real zero by value. Both start being populated
     # around 2016-01-18 and both carry scattered zeros afterwards, so the
@@ -250,6 +271,7 @@ def build_derived(
             "spread_points": spread,
             "valid": valid,
             "in_window": in_window,
+            "session_era": session_era,
         }
     )
     derived["label_valid"] = label_validity(valid, label_horizon_bars)

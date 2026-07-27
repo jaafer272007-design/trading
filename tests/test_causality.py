@@ -75,6 +75,44 @@ def test_every_feature_module_is_registered() -> None:
     )
 
 
+def test_no_registered_feature_is_session_relative_while_r001_is_open() -> None:
+    """``REVIEW_ITEMS.md`` R-001, enforced rather than described.
+
+    This feed's session structure changes twice inside H-006's window — the
+    daily break is absent between 2017-10-07 and 2022-10-20 — so a feature
+    reading the session open, the session close, position within the session,
+    or bars until the break is measuring a different quantity on either side
+    of 2017-10-07. The boundary dates have not been checked against any source
+    outside this project.
+
+    Both of those are reasons to wait. Neither is visible once such a feature
+    is in a design matrix, which is why this is a test and not a note.
+    """
+    from data.review import ReviewItemError, assert_not_blocked_by
+
+    offenders = [f.name for f in FEATURE_REGISTRY if f.session_relative]
+    if not offenders:
+        return
+    with pytest.raises(ReviewItemError):
+        assert_not_blocked_by("R-001", f"registering {offenders}")
+    pytest.fail(
+        f"session-relative features registered while R-001 is open: {offenders}. "
+        f"Close the review item against an external source first — re-running "
+        f"scripts/report_session_eras.py does not close it."
+    )
+
+
+def test_every_feature_declares_session_relativity() -> None:
+    """It cannot be inferred, so it must be declared.
+
+    A feature indexing off the calendar's session hours and one that does not
+    are the same shape from the outside. Without the declaration the guard
+    above is a check on nothing.
+    """
+    for feature in FEATURE_REGISTRY:
+        assert isinstance(feature.session_relative, bool), feature.name
+
+
 @pytest.mark.parametrize("seed", SEEDS)
 def test_all_features_are_causal(seed: int) -> None:
     """DATA_CONTRACT §1. Failure trips K-2 — halt, do not work around."""

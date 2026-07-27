@@ -94,6 +94,15 @@ class LeakySwingHigh:
         """The declared lag — deliberately understated by default."""
         return self._declared_lag
 
+    @property
+    def session_relative(self) -> bool:
+        """Reads no session boundary.
+
+        Returns:
+            False.
+        """
+        return False
+
     def compute(self, df: pd.DataFrame) -> pd.Series:
         """Compute the (leaky) swing-high flag.
 

@@ -322,3 +322,63 @@ def test_the_window_never_ends_on_the_in_progress_day(snapshot: Path) -> None:
     manifest = _manifest(snapshot)
     last_bar = pd.Timestamp(manifest.last_bar_utc).date()
     assert pd.Timestamp(manifest.window_end).date() < last_bar
+
+
+# ---------------------------------------------------------------------------
+# H-006's era term
+# ---------------------------------------------------------------------------
+
+
+def test_session_era_is_a_column_on_every_bar() -> None:
+    """A property of the bar, alongside valid and in_window — not a feature.
+
+    H-006 amended: the window spans three session structures, so a model
+    fitted across it is fitted across three different definitions of a
+    session. The term is what makes that measurable instead of latent.
+    """
+    assert "session_era" in DERIVED_COLUMNS
+    derived, _ = _derived()
+    inside = derived[derived["in_window"].to_numpy()]
+    assert not bool((inside["session_era"] == "").any())
+
+
+def test_every_era_is_actually_represented_in_the_window() -> None:
+    """A term with one level is not a term.
+
+    If a boundary ever moved outside the window this would collapse to a
+    constant column, and a constant regressor is silently dropped by most
+    fitting code rather than reported.
+    """
+    _, _, calendar = _raw()
+    derived, _ = _derived()
+    inside = derived[derived["in_window"].to_numpy()]
+    present = set(inside["session_era"])
+    assert present == {era.start.isoformat() for era in calendar.eras}
+    for era in present:
+        share = (inside["session_era"] == era).mean()
+        assert share > 0.05, (era, share)
+
+
+def test_the_era_term_is_read_from_the_calendar_not_re_derived() -> None:
+    """Re-deriving it from the data it qualifies could not detect a change.
+
+    Same argument the calendar makes for the clock rule. Checked by comparing
+    every bar against the frozen declaration rather than against a second
+    measurement of the feed.
+    """
+    _, _, calendar = _raw()
+    derived, _ = _derived()
+    sample = derived.iloc[::500]
+    for server, era in zip(
+        sample["timestamp_server"], sample["session_era"], strict=True
+    ):
+        declared = calendar.era_for(pd.Timestamp(server).date())
+        assert era == (declared.start.isoformat() if declared else ""), server
+
+
+def test_bars_before_the_first_era_carry_no_era_and_are_out_of_window() -> None:
+    """The sparse era predates the declaration; the question does not arise."""
+    derived, _ = _derived()
+    unlabelled = derived[derived["session_era"] == ""]
+    assert len(unlabelled) > 0
+    assert not bool(unlabelled["in_window"].any())
