@@ -259,6 +259,61 @@ def label_validity(
     return out
 
 
+def feature_validity(
+    bar_valid: npt.NDArray[np.bool_], lookback_bars: int
+) -> npt.NDArray[np.bool_]:
+    """Propagate bar validity **backward** across a feature's lookback.
+
+    The mirror image of :func:`label_validity`, and it was missing.
+
+    A label looks forward and is invalidated by a hole ahead of it. A feature
+    looks *back*: a 48-bar rolling statistic at ``T`` reads ``T-47 … T``, so a
+    hole anywhere in that span contaminates it. Nothing in this module
+    computed that, which meant a feature could be computed straight across an
+    unexplained gap and come out looking like an ordinary number.
+
+    This matters more than the count of invalid bars suggests. Twelve invalid
+    bars in the real snapshot invalidate twelve *labels* directly, but they
+    reach ``lookback - 1`` bars forward through every feature that spans them,
+    and the resulting values are not missing, not flagged, and not obviously
+    wrong — they are averages over two sides of a hole.
+
+    Note the asymmetry in what "invalid" means here. Dropping the invalid rows
+    from the frame instead would be worse, not better: the series would close
+    up, the hole would become invisible, and every rolling window crossing the
+    site would silently read across it with no way to tell. Positions are kept
+    and masked.
+
+    Args:
+        bar_valid: Per-bar validity.
+        lookback_bars: Bars of history the feature reads, inclusive of ``T``.
+
+    Returns:
+        Per-bar feature validity, same length as ``bar_valid``. The first
+        ``lookback_bars - 1`` positions are False: a feature with insufficient
+        history is not computable, which is a different fact from a hole but
+        has the same consequence.
+
+    Raises:
+        ValueError: If ``lookback_bars`` is not positive.
+    """
+    if lookback_bars <= 0:
+        raise ValueError(f"lookback_bars must be positive, got {lookback_bars}")
+
+    n = len(bar_valid)
+    out = np.zeros(n, dtype=np.bool_)
+    if n == 0:
+        return out
+
+    # Prefix-sum window, same shape as label_validity so the cost does not
+    # scale with the lookback.
+    invalid_prefix = np.concatenate(([0], np.cumsum(~bar_valid)))
+    for i in range(lookback_bars - 1, n):
+        start = i - lookback_bars + 1
+        out[i] = (invalid_prefix[i + 1] - invalid_prefix[start]) == 0
+    return out
+
+
 def gap_census(gaps: list[Gap]) -> dict[str, int]:
     """Count gaps by cause, for the snapshot manifest.
 

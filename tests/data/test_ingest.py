@@ -16,7 +16,13 @@ import pandas as pd
 import pytest
 
 from data.calendar import CalendarError, MarketCalendar, load_calendar
-from data.classify import GapCause, bar_validity, gap_census, label_validity
+from data.classify import (
+    GapCause,
+    bar_validity,
+    feature_validity,
+    gap_census,
+    label_validity,
+)
 from data.loader import LoaderError, load_full_snapshot, load_window
 from data.snapshot import (
     SnapshotError,
@@ -338,3 +344,77 @@ def test_loader_refuses_an_empty_window(
 
     with pytest.raises(LoaderError, match="no rows inside the window"):
         load_window(tmp_path / "snap", calendar=future)
+
+
+# ---------------------------------------------------------------------------
+# Feature validity — the backward mirror of label validity
+# ---------------------------------------------------------------------------
+
+
+def test_a_feature_window_spanning_an_invalid_bar_is_invalid() -> None:
+    """The check that was missing.
+
+    A rolling statistic reads backward. With a 4-bar lookback and bar 10
+    invalid, positions 10 through 13 all read it and are all contaminated;
+    position 14 is the first clean one.
+    """
+    valid = np.ones(20, dtype=np.bool_)
+    valid[10] = False
+    got = feature_validity(valid, lookback_bars=4)
+
+    assert not got[10:14].any(), np.flatnonzero(got[10:14])
+    assert got[14]
+    assert got[9], "position 9's window is [6, 9] and never reaches the hole"
+
+
+def test_the_first_bars_have_no_history_and_are_invalid() -> None:
+    """Insufficient history is a different fact with the same consequence."""
+    got = feature_validity(np.ones(20, dtype=np.bool_), lookback_bars=5)
+    assert not got[:4].any()
+    assert got[4:].all()
+
+
+def test_feature_and_label_validity_reach_in_opposite_directions() -> None:
+    """Stated as a property, because the two are easy to transpose.
+
+    A single invalid bar contaminates the ``lookback-1`` bars *after* it
+    through features, and the ``horizon`` bars *before* it through labels.
+    Getting the direction wrong would produce a mask that looks plausible and
+    protects nothing.
+    """
+    valid = np.ones(40, dtype=np.bool_)
+    valid[20] = False
+
+    features_bad = set(np.flatnonzero(~feature_validity(valid, 5))) - set(range(4))
+    labels_bad = set(np.flatnonzero(~label_validity(valid, 5))) - set(range(35, 40))
+
+    assert max(features_bad) > 20 > min(labels_bad)
+    assert features_bad == {20, 21, 22, 23, 24}
+    assert labels_bad == {15, 16, 17, 18, 19, 20}
+
+
+def test_feature_validity_rejects_a_non_positive_lookback() -> None:
+    with pytest.raises(ValueError, match="lookback_bars must be positive"):
+        feature_validity(np.ones(5, dtype=np.bool_), 0)
+
+
+def test_dropping_invalid_rows_would_hide_the_hole() -> None:
+    """Why positions are masked and never removed.
+
+    Two frames: one with the hole present and masked, one with the invalid row
+    deleted. A rolling mean over the deleted version reads straight across the
+    site and produces a perfectly ordinary number with nothing marking it.
+    """
+    values = np.arange(20.0)
+    valid = np.ones(20, dtype=np.bool_)
+    valid[10] = False
+
+    kept = np.convolve(values, np.ones(3) / 3, mode="valid")
+    closed_up = np.convolve(np.delete(values, 10), np.ones(3) / 3, mode="valid")
+
+    masked = feature_validity(valid, lookback_bars=3)
+    assert not masked[10:13].any()
+    # The closed-up series is shorter and its values differ at the site: the
+    # defect is real, and only the mask makes it visible.
+    assert len(closed_up) < len(kept)
+    assert not np.array_equal(kept[8:12], closed_up[8:12])

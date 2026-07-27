@@ -15,7 +15,10 @@ harness work?".
 """
 
 import pkgutil
+from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 import features
@@ -111,6 +114,64 @@ def test_every_feature_declares_session_relativity() -> None:
     """
     for feature in FEATURE_REGISTRY:
         assert isinstance(feature.session_relative, bool), feature.name
+
+
+def test_a_feature_declaring_no_session_relativity_ignores_the_index() -> None:
+    """Falsifies the declaration instead of trusting it.
+
+    ``session_relative`` is a claim a feature makes about itself, and R-001
+    turns that claim into a gate. A claim nobody can check is not worth
+    gating on.
+
+    The check: recompute on a frame whose index has been replaced with an
+    arbitrary monotonic one — irregular spacing, a different timezone,
+    different weekdays, no session structure of any kind — and require
+    bit-identical output. A feature that reads the clock cannot survive that;
+    one that only walks a positional window cannot notice it.
+
+    This is not the causal test and does not replace it. Causality is about
+    *which bars* a feature reads; this is about whether it reads anything
+    other than bars at all.
+    """
+    frame = generate_ohlcv(n_bars=N_BARS, seed=0)
+    scrambled = frame.copy()
+    scrambled.index = pd.DatetimeIndex(
+        pd.Timestamp("1999-01-04 03:17", tz="Australia/Eucla")
+        + pd.to_timedelta(np.cumsum(np.arange(1, len(frame) + 1) % 7 + 1), unit="h")
+    )
+
+    for feature in FEATURE_REGISTRY:
+        if feature.session_relative:
+            continue
+        original = feature.compute(frame).to_numpy()
+        relabelled = feature.compute(scrambled).to_numpy()
+        assert np.array_equal(original, relabelled, equal_nan=True), (
+            f"{feature.name} declares session_relative=False but its output "
+            f"changed when only the index changed. Either it reads the clock — "
+            f"in which case the declaration is wrong and R-001 blocks it — or "
+            f"it has an index-dependent bug."
+        )
+
+
+def test_no_feature_module_mentions_the_calendar() -> None:
+    """A second, blunter angle on the same claim.
+
+    The test above would miss a feature whose clock-reading happens to make no
+    difference on this particular fixture. This one cannot be fooled that way,
+    and is cheap: a feature that imports the calendar or reads an hour is
+    session-relative whether or not a 600-bar sample shows it.
+    """
+    forbidden = ("data.calendar", "data.invariants", "ZoneInfo", "tz_convert")
+    for path in sorted(Path(features.__path__[0]).glob("*.py")):
+        if path.name == "base.py":
+            continue
+        body = path.read_text(encoding="utf-8")
+        hits = [token for token in forbidden if token in body]
+        assert not hits, (
+            f"{path.name} references {hits}. A feature reaching for the "
+            f"calendar is session-relative; declare it and read REVIEW_ITEMS.md "
+            f"R-001 before registering it."
+        )
 
 
 @pytest.mark.parametrize("seed", SEEDS)
