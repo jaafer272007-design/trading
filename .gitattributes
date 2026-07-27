@@ -1,0 +1,15 @@
+# Raw broker exports are hash-pinned. Git must not touch a single byte.
+#
+# Without this, a clone on Windows with core.autocrlf=true rewrites LF to CRLF
+# on checkout, every byte after the first line shifts, and the SHA-256 recorded
+# in src/data/raw.py stops matching a file nobody edited. The guard would fire
+# on a machine difference and read as data corruption, which is the worst
+# possible failure for a check whose entire job is to detect data corruption.
+#
+# -text disables all end-of-line conversion in both directions.
+data/raw/*.csv -text
+data/raw/*.sha256 -text
+
+# Same reasoning: the calendar is hashed byte-for-byte by
+# src/data/calendar.py, so its line endings are load-bearing.
+calendar/*.yaml -text

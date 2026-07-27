@@ -1,6 +1,19 @@
+# The sealed holdout. Never committed, never read, never opened without
+# explicit sign-off (CLAUDE.md Hard Rule 5, EVALUATION.md §8).
 data/holdout/
-data/snapshots/*.parquet
-!data/snapshots/*.sha256
+
+# Derived snapshots are NOT committed. They are a pure function of
+# data/raw/ + calendar/gold_fxpro.yaml + src/data/, all of which ARE
+# committed, so they can be rebuilt exactly and their manifest hash proves
+# the rebuild matches. Committing them would store the same information
+# twice and grow the repository for nothing.
+#
+# Note the trailing-slash form: the previous pattern was
+# `data/snapshots/*.parquet`, which matched neither a derived .csv nor
+# anything inside a per-snapshot subdirectory. Snapshots would have been
+# tracked.
+data/snapshots/
+
 .venv/
 __pycache__/
 *.pyc
