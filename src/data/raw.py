@@ -118,7 +118,6 @@ RAW_EXPORTS: Final[tuple[RawExport, ...]] = (
         rows=67_367,
         first_server_day=date(2008, 3, 11),
         last_server_day=date(2026, 7, 27),
-        awaiting_upload=True,
     ),
     RawExport(
         filename="GOLD-M1-20260415-20260727.csv",
@@ -127,7 +126,6 @@ RAW_EXPORTS: Final[tuple[RawExport, ...]] = (
         rows=100_213,
         first_server_day=date(2026, 4, 15),
         last_server_day=date(2026, 7, 27),
-        awaiting_upload=True,
     ),
 )
 
