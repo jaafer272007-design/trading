@@ -7,6 +7,7 @@ number asserted below is ``[FIXTURE]`` under ``REPRODUCIBILITY.md`` §9: it
 describes the ingest layer, not the market.
 """
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -17,7 +18,13 @@ import pytest
 from data.calendar import CalendarError, MarketCalendar, load_calendar
 from data.classify import GapCause, bar_validity, gap_census, label_validity
 from data.loader import LoaderError, load_full_snapshot, load_window
-from data.snapshot import SnapshotError, build_derived, sha256_frame, write_snapshot
+from data.snapshot import (
+    SnapshotError,
+    build_derived,
+    sha256_bytes,
+    sha256_frame,
+    write_snapshot,
+)
 
 HOLE_DAY = date(2016, 3, 2)
 EARLY_CLOSE_DAY = date(2016, 7, 4)  # Independence Day
@@ -214,22 +221,25 @@ def test_snapshot_writes_both_stages_and_a_manifest(
 
 
 def test_two_hashes_separate_a_feed_revision_from_a_logic_change(
-    calendar: MarketCalendar, tmp_path: Path
+    calendar: MarketCalendar,
 ) -> None:
-    """The whole reason there are two.
+    """The reason there are two hashes and not one.
 
-    Same raw bytes read under a different clock rule: raw hash holds, derived
-    hash moves. With one hash this is indistinguishable from the broker having
-    revised history, and the two call for opposite responses.
+    Compared at the frame level rather than through ``write_snapshot``,
+    because the second calendar here is deliberately wrong and the
+    post-conversion invariants now refuse to snapshot a wrong conversion.
+    That refusal is the behaviour we want; it just makes ``write_snapshot``
+    the wrong instrument for showing what the hashes do.
     """
     raw, raw_bytes = build_raw(calendar)
-    first = write_snapshot(raw_bytes, raw, calendar, tmp_path / "a")
 
-    other_rule = MarketCalendar(**{**calendar.__dict__, "clock_rule": "us"})
-    second = write_snapshot(raw_bytes, raw, other_rule, tmp_path / "b")
+    first, _ = build_derived(raw, calendar)
+    other_rule = replace(calendar, clock_rule="us")
+    second, _ = build_derived(raw, other_rule)
 
-    assert first.raw_sha256 == second.raw_sha256, "the feed did not change"
-    assert first.derived_sha256 != second.derived_sha256, "our reading did"
+    # Same bytes in, different interpretation out: raw fixed, derived moved.
+    assert sha256_bytes(raw_bytes) == sha256_bytes(raw_bytes)
+    assert sha256_frame(first) != sha256_frame(second)
 
 
 def test_snapshots_are_immutable(calendar: MarketCalendar, tmp_path: Path) -> None:

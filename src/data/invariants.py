@@ -138,6 +138,23 @@ class InvariantError(RuntimeError):
     """A converted series violates something that must hold."""
 
 
+class InsufficientEvidenceError(InvariantError):
+    """The series is too short or too narrow for a check to say anything.
+
+    Deliberately distinct from a failure, and deliberately a subclass of one.
+
+    Distinct, because "this snapshot covers three days so the weekly close
+    tells us nothing" and "the weekly close is in the wrong place" call for
+    opposite responses, and collapsing them would let a fixture-sized snapshot
+    look certified.
+
+    A subclass, because the default behaviour on encountering it must still be
+    to stop. Only a caller that has decided to record the abstention — see
+    ``data.snapshot.check_conversion``, which writes it into the manifest —
+    should catch it, and it has to name this class to do so.
+    """
+
+
 @dataclass
 class BoundaryReport:
     """Where the weekly boundaries actually landed."""
@@ -223,9 +240,10 @@ def assert_weekly_close_is_new_york_anchored(
     """
     report = weekly_boundaries(utc, server, calendar)
     if report.weeks == 0:
-        raise InvariantError(
-            "no weekend gaps found. Either the series is under a week long or "
-            "the weekend detector is broken; neither may pass silently."
+        raise InsufficientEvidenceError(
+            "no weekend gaps found, so this says nothing about the conversion. "
+            "Either the series is under a week long or the weekend detector is "
+            "broken; both are reasons to abstain rather than to pass."
         )
 
     off_share = len(report.off_hour_closes) / report.weeks
@@ -386,7 +404,7 @@ def assert_release_hour_is_covered(
             within a single US daylight-saving regime.
     """
     if len(utc) == 0:
-        raise InvariantError("empty series")
+        raise InsufficientEvidenceError("empty series")
 
     present = {ts: i for i, ts in enumerate(utc)}
     fridays = first_fridays(utc[0].tz_convert(NEW_YORK).date(), utc[-1].date())
@@ -517,6 +535,9 @@ def payrolls_volume_peak(
     Returns:
         The distribution of per-day peak hours.
     """
+    if len(utc) == 0:
+        return PeakReport(days=0)
+
     local = utc.tz_convert(NEW_YORK)
     hour = np.array([ts.hour for ts in local])
     weekday = np.array([ts.weekday() for ts in local])
@@ -539,7 +560,7 @@ def payrolls_volume_peak(
         scored = {
             h: float(volume[same_day & (hour == h)][0]) / baseline[h]
             for h in PEAK_SEARCH_HOURS
-            if h in baseline and baseline[h] > 0 and (same_day & (hour == h)).any()
+            if baseline.get(h, 0.0) > 0 and (same_day & (hour == h)).any()
         }
         if not scored:
             continue
@@ -576,7 +597,7 @@ def assert_payrolls_volume_peaks_at_the_release_hour(
     """
     report = payrolls_volume_peak(utc, tick_volume)
     if report.days < MIN_RELEASE_DAYS:
-        raise InvariantError(
+        raise InsufficientEvidenceError(
             f"only {report.days} payrolls days available; this check needs at "
             f"least {MIN_RELEASE_DAYS} for a mode to be worth reading."
         )
@@ -630,6 +651,13 @@ def assert_daily_break_is_at_new_york_seventeen(
         offset = calendar.offset_hours(break_at.date())
         as_utc = (break_at - pd.Timedelta(hours=offset)).tz_localize("UTC")
         hours[as_utc.tz_convert(NEW_YORK).hour] += 1
+
+    if not hours:
+        raise InsufficientEvidenceError(
+            "no daily-break gaps found. A snapshot lying entirely inside the "
+            "2017-2022 no-break era legitimately has none, and so does one too "
+            "short to contain a rollover; neither is evidence of anything."
+        )
 
     stray = {h: n for h, n in hours.items() if h != DAILY_BREAK_HOUR_NY}
     if stray:

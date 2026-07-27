@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -69,6 +70,7 @@ DERIVED_COLUMNS: Final = (
     "low",
     "close",
     "tick_volume",
+    "real_volume",
     "spread_points",
     "valid",
     "in_window",
@@ -103,6 +105,15 @@ class SnapshotManifest:
     labels_valid_in_window: int
     label_horizon_bars: int
     gap_census: dict[str, int]
+    invariants: dict[str, str]
+    """Per-check outcome from :func:`check_conversion`, by name.
+
+    Recorded rather than summarised. A snapshot on which two of the four
+    checks could not run is a different object from one where all four
+    passed, and only a per-check record makes that visible to a reader who
+    was not there when it was built.
+    """
+
     first_bar_utc: str
     last_bar_utc: str
 
@@ -176,7 +187,16 @@ def build_derived(
         SnapshotError: If required columns are absent or the rows are not
             sorted by time.
     """
-    required = {"time", "open", "high", "low", "close", "tick_volume", "spread"}
+    required = {
+        "time",
+        "open",
+        "high",
+        "low",
+        "close",
+        "tick_volume",
+        "spread",
+        "real_volume",
+    }
     missing = required - set(raw.columns)
     if missing:
         raise SnapshotError(f"raw export is missing columns: {sorted(missing)}")
@@ -201,10 +221,21 @@ def build_derived(
     valid, gaps = bar_validity(server, calendar)
     in_window = np.array([ts.date() >= calendar.window_start for ts in server])
 
-    # §6: a zero in the spread field means UNRECORDED, and is not
-    # distinguishable from a real zero by value. It becomes None in both eras.
+    # §6: a zero in either of these fields means UNRECORDED and is not
+    # distinguishable from a real zero by value. Both start being populated
+    # around 2016-01-18 and both carry scattered zeros afterwards, so the
+    # ambiguity is not confined to the early era and cannot be handled by a
+    # date cutoff. They become None, and propagate as None.
+    #
+    # real_volume is carried rather than dropped. Nothing reads it yet, but
+    # discarding a raw column at the only point where raw becomes derived
+    # would make it unrecoverable without a re-ingest, and §6 is about not
+    # losing the distinction between "absent" and "zero" — which is exactly
+    # what dropping the column does, permanently.
     spread = raw["spread"].astype("float64").to_numpy().copy()
     spread[spread == 0.0] = np.nan
+    real_volume = raw["real_volume"].astype("float64").to_numpy().copy()
+    real_volume[real_volume == 0.0] = np.nan
 
     derived = pd.DataFrame(
         {
@@ -215,6 +246,7 @@ def build_derived(
             "low": raw["low"].astype("float64").to_numpy(),
             "close": raw["close"].astype("float64").to_numpy(),
             "tick_volume": raw["tick_volume"].astype("int64").to_numpy(),
+            "real_volume": real_volume,
             "spread_points": spread,
             "valid": valid,
             "in_window": in_window,
@@ -222,6 +254,78 @@ def build_derived(
     )
     derived["label_valid"] = label_validity(valid, label_horizon_bars)
     return derived, gap_census(gaps)
+
+
+#: The post-conversion checks, in the order the manifest records them.
+INVARIANT_NAMES: Final = (
+    "weekly_close_new_york",
+    "release_hour_covered",
+    "payrolls_volume_peak",
+    "daily_break_new_york",
+)
+
+
+def check_conversion(derived: pd.DataFrame, calendar: MarketCalendar) -> dict[str, str]:
+    """Run every post-conversion invariant and report what each one said.
+
+    Returns a record rather than a boolean, and the record goes in the
+    manifest. That is the point: a check which could not run on a given
+    snapshot must say so by name, so a reader can tell four passes from two
+    passes and two abstentions. A summary that collapses them is the invisible
+    gate this project keeps rediscovering — the snapshot looks certified and
+    half the certification never executed.
+
+    A genuine violation is not caught here. It propagates, and the snapshot is
+    not written.
+
+    Args:
+        derived: The converted frame, with ``in_window`` set.
+        calendar: The frozen calendar.
+
+    Returns:
+        Check name to ``"pass"`` or ``"insufficient: <why>"``.
+
+    Raises:
+        InvariantError: If any check fails outright.
+    """
+    from data.invariants import (
+        InsufficientEvidenceError,
+        assert_daily_break_is_at_new_york_seventeen,
+        assert_payrolls_volume_peaks_at_the_release_hour,
+        assert_release_hour_is_covered,
+        assert_weekly_close_is_new_york_anchored,
+    )
+
+    inside = derived[derived["in_window"].to_numpy()]
+    utc = pd.DatetimeIndex(inside["timestamp_utc"])
+    server = pd.DatetimeIndex(inside["timestamp_server"])
+    volume = inside["tick_volume"].to_numpy(dtype="int64")
+
+    runs: tuple[tuple[str, Callable[[], object]], ...] = (
+        (
+            "weekly_close_new_york",
+            lambda: assert_weekly_close_is_new_york_anchored(utc, server, calendar),
+        ),
+        ("release_hour_covered", lambda: assert_release_hour_is_covered(utc, calendar)),
+        (
+            "payrolls_volume_peak",
+            lambda: assert_payrolls_volume_peaks_at_the_release_hour(utc, volume),
+        ),
+        (
+            "daily_break_new_york",
+            lambda: assert_daily_break_is_at_new_york_seventeen(server, calendar),
+        ),
+    )
+
+    outcome: dict[str, str] = {}
+    for name, run in runs:
+        try:
+            run()
+        except InsufficientEvidenceError as why:
+            outcome[name] = f"insufficient: {why}"
+        else:
+            outcome[name] = "pass"
+    return outcome
 
 
 def write_snapshot(
@@ -262,6 +366,10 @@ def write_snapshot(
     derived, census = build_derived(
         raw, calendar, label_horizon_bars=label_horizon_bars
     )
+    # Before anything is written. A violation raises here and no snapshot is
+    # produced, so a frame that fails the conversion checks cannot become
+    # something a later run reads without noticing.
+    invariants = check_conversion(derived, calendar)
     in_window = derived["in_window"].to_numpy()
 
     raw_path.write_bytes(raw_bytes)
@@ -287,6 +395,7 @@ def write_snapshot(
         ),
         label_horizon_bars=label_horizon_bars,
         gap_census=census,
+        invariants=invariants,
         first_bar_utc=utc[0].isoformat() if len(utc) else "",
         last_bar_utc=utc[-1].isoformat() if len(utc) else "",
     )
