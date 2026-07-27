@@ -10,11 +10,19 @@ requires-python = "==3.12.*"
 dependencies = [
     "numpy==2.5.1",
     "pandas==3.0.5",
+    # Reads calendar/gold_fxpro.yaml only. Chosen because that file must be
+    # reviewable line-by-line in a diff against an exchange schedule, which is
+    # what it is for. Loaded exclusively through src/data/calendar.py, which
+    # type-checks every field: YAML's implicit coercion (bare `no` -> False,
+    # bare dates -> date) is convenient here but must never be trusted to have
+    # produced the type we expected.
+    "PyYAML==6.0.3",
 ]
 
 [dependency-groups]
 dev = [
     "pytest==9.1.1",
+    "types-PyYAML==6.0.12.20250915",
     "ruff==0.16.0",
     "mypy==2.3.0",
     "pandas-stubs==3.0.3.260530",
@@ -96,6 +104,7 @@ convention = "google"
 # the repository imports it, and its one dependency is the same untyped
 # MetaTrader5 module.
 "scripts/capture_ticks.py" = ["ANN401"]
+"scripts/mt5_export.py" = ["ANN401"]
 
 # ---------------------------------------------------------------------------
 # mypy — strict

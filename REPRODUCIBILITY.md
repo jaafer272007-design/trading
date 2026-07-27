@@ -230,3 +230,55 @@ Notes:
 - **Restore drill quarterly:** pick a random result from ≥ 3 months prior and reproduce it
   from the manifest alone. A reproducibility policy that is never exercised is not a
   policy.
+
+---
+
+## 9. Provenance of Reported Numbers
+
+**Every quantitative claim in a report carries its provenance. A number without one is not
+reportable.**
+
+| Tag | Meaning |
+|---|---|
+| `[MEASURED]` | Counted or computed directly from the data being described. No modelling step between the data and the number. |
+| `[ESTIMATE]` | Derived from measured quantities under a stated assumption. **The assumption is named at the point of use**, not left to the reader. An extrapolation, a rate, a projection, and an interpolation are all estimates. |
+| `[FIXTURE]` | Produced by synthetic or test data. Describes the instrument, never the world. |
+
+### Why this exists
+
+Two numbers in this project were reported as measured and were not:
+
+| Number | Claimed | Actually | Error |
+|---|---|---|---|
+| **4,579** "total independent decisions" | measured | median-bars-per-week × 52 × years | 63% above the measured ceiling of 2,806 |
+| **2,600** daily-break observations, "~5× the weekly open" | measured | a test fixture: 520 weeks × 5 days | live figure is 1,055, about 2× |
+
+Neither was a calculation error. Both were fluent, plausible, and load-bearing in an
+argument, and both survived review because nothing in the sentence marked them as anything
+other than counts. That is the failure mode this rule addresses: not arithmetic, but a
+number arriving without the one piece of metadata that would have made it checkable.
+
+### Scope — the part that matters
+
+The instrument already labels its own output. **Both errors appeared in prose**: a report
+paragraph and a pull-request body. So the rule applies wherever a number is asserted:
+
+- run reports and evaluation writeups
+- pull-request titles and bodies
+- commit messages
+- hypothesis entries in `HYPOTHESES.md`
+- code comments and docstrings that quote a figure
+- any message to a human that carries a number
+
+Tool output that already labels itself satisfies this by construction. Quoting that output
+into prose does **not** inherit the label — restate it.
+
+### Enforcement
+
+This is a reporting discipline, not a kill criterion, and carries no K-code
+(`CLAUDE.md` Hard Rule 4). It cannot be usefully automated: the failure is a true number
+described wrongly, which no linter can see. It is enforced at review, and the correct
+response to an unlabelled number is to ask where it came from before reading further.
+
+A number whose provenance cannot be established after the fact is not downgraded to
+`[ESTIMATE]`. It is **withdrawn**.
