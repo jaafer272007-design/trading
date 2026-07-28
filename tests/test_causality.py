@@ -33,13 +33,19 @@ from features.realized_vol import RealizedVol
 from features.reversal import Reversal
 from features.vol_scaled_return import VolScaledReturn
 from features.volume_weighted_return import VolumeWeightedReturn
-from tests.causality import assert_all_causal
+from tests.causality import DEFAULT_MIN_BARS_TESTED, assert_causal
 
 SEEDS = (0, 1, 2)
 """Seeds swept. A result on one seed is a result about that seed."""
 
-N_BARS = 1_400
-"""Long enough for the 480-bar features to clear the 200-bar sweep width."""
+N_BARS = 700
+"""Frame length for the whole-registry checks that are not the causal sweep.
+
+The sweep itself sizes its frame per feature — see :func:`_sweep_frame`. One
+global length has to satisfy the longest-lookback feature, which makes every
+short-lookback feature pay for it: at 1,400 bars the sweep cost 161 s of a
+223 s suite, against a Tier 1 budget of five minutes.
+"""
 
 FEATURE_REGISTRY: tuple[Feature, ...] = (
     ATR(period=14),
@@ -189,7 +195,42 @@ def test_no_feature_module_mentions_the_calendar() -> None:
         )
 
 
+def _sweep_frame(feature: Feature, seed: int) -> pd.DataFrame:
+    """A frame exactly long enough for the full sweep width on this feature.
+
+    ``DEFAULT_MIN_BARS_TESTED`` bars must be eligible, and a bar is eligible
+    once the feature can produce a value there and the frame can supply the
+    declared confirmation window. Sizing per feature keeps the sweep width at
+    exactly that number for every feature — the guarantee is unchanged — while
+    not making a 4-bar feature walk a frame sized for a 480-bar one.
+
+    Args:
+        feature: The feature about to be swept.
+        seed: Synthetic data seed.
+
+    Returns:
+        The frame.
+    """
+    n_bars = (
+        feature.lookback_bars
+        - 1
+        + DEFAULT_MIN_BARS_TESTED
+        + feature.confirmation_lag_bars
+    )
+    return generate_ohlcv(n_bars=n_bars, seed=seed)
+
+
 @pytest.mark.parametrize("seed", SEEDS)
 def test_all_features_are_causal(seed: int) -> None:
     """DATA_CONTRACT §1. Failure trips K-2 — halt, do not work around."""
-    assert_all_causal(FEATURE_REGISTRY, generate_ohlcv(n_bars=N_BARS, seed=seed))
+    for feature in FEATURE_REGISTRY:
+        assert_causal(feature, _sweep_frame(feature, seed))
+
+
+def test_the_sweep_frame_gives_every_feature_the_full_width() -> None:
+    """The cost fix must not have narrowed the sweep. Asserted, not assumed."""
+    for feature in FEATURE_REGISTRY:
+        frame = _sweep_frame(feature, seed=0)
+        first = max(feature.lookback_bars - 1, 0)
+        last = len(frame) - 1 - feature.confirmation_lag_bars
+        assert last - first + 1 == DEFAULT_MIN_BARS_TESTED, feature.name
