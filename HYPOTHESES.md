@@ -3156,6 +3156,37 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 > combiner at once — the confound H-011 existed to remove is still there, unremoved, and
 > now known to be unremovable cheaply.
 
+**2026-07-28, later — CORRECTION to the block above. The tractability argument was wrong.**
+
+> H-012 measured what H-010 could not: **eleven parameters of real features converge at a
+> thousand gradient steps**, worst gradient infinity-norm `8.5e-07` to `1.6e-06` across
+> three horizons. H-010 measured twenty parameters of *polynomial* design leaving the
+> gradient at `2.4e-04`, and thirty-five stalling at `0.15`.
+>
+> **The optimiser failure was a property of the polynomial basis, not of parameter count.**
+> A design matrix of genuinely different measurements is well-conditioned where a basis
+> expansion of three columns is not.
+>
+> **What that falsifies in the block above:**
+>
+> - "What made it unanswerable **by this route**" was correctly scoped and stands — but the
+>   surrounding framing implied the cost was intrinsic to raising capacity. It was not.
+>   Capacity was not computationally unanswerable in general. It was unanswerable **by the
+>   polynomial route**, which is a much narrower statement.
+> - "now known to be unremovable cheaply", in the last paragraph, is **false as written**.
+>   The confound is removable at ordinary cost by a well-conditioned design; H-011 chose an
+>   ill-conditioned one.
+>
+> **What it does not falsify, and what the abandonment now rests on.** Reason 1 — *three
+> columns is a very small hypothesis class regardless of what is fitted over it* — is
+> untouched, and it was always the load-bearing one. Reasons 2 and 3 are untouched.
+> **The abandonment stands on the size of the hypothesis class, not on tractability.**
+> Anyone citing this entry should cite that ground and not the other.
+>
+> Recorded as a correction rather than an edit, per §2 rule 3's principle: the original
+> reasoning is left visible so that the error is part of the record rather than absent
+> from it.
+
 ---
 
 ### H-012 — Does any deterministic feature set carry directional information at this horizon?
