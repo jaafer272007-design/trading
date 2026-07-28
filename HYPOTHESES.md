@@ -11,19 +11,22 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 8
+Registered (registry completeness) ... 11
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
-  ├─ Rejected ....................... 1   H-007 (rung 2, 2026-07-28)
+  ├─ Rejected ....................... 3   H-007 (rung 2, 2026-07-28)
+  │                                       H-009 (volatility, 2026-07-28)
+  │                                       H-010 (capacity gate, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 4
+  └─ In flight ...................... 5
 
-N_claims (multiple-testing denom.) ... N = 3
-  ├─ gates  (not counted) ........... 5   H-001, H-002, H-005, H-006, H-008
-  └─ claims (counted) ............... 3   H-003, H-004, H-007
+N_claims (multiple-testing denom.) ... N = 5
+  ├─ gates  (not counted) ........... 6   H-001, H-002, H-005, H-006, H-008, H-010
+  └─ claims (counted) ............... 5   H-003, H-004, H-007, H-009, H-011
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
+BH rank-1 critical value ............ 0.05 × 1/5 = 0.0100
 ```
 
 > **Note on H-003, 2026-07-28 — why it is marked "see note".** Registering H-007 moved
@@ -40,6 +43,45 @@ FDR correction level ................ α = 0.05, Benjamini–Hochberg
 > `Status: ACCEPTED` is left in place on purpose. The run happened and its arithmetic
 > holds; what failed is the inference drawn from it, and the registry records what was
 > done rather than what is currently believed.
+
+> **Second note on H-003, 2026-07-28 — registering H-009 changes §9 again, and could
+> change it in H-003's favour.** `N_claims` moves 3 → 4, so the BH critical values become
+> `0.0125, 0.025, 0.0375, 0.05`. Because BH is step-up, **if H-009 returns `p <= 0.025`
+> the procedure rejects the two smallest `p`-values, which includes H-003 at `0.0204`.**
+> H-003 would then clear `EVALUATION.md` §9 for the first time.
+>
+> That would change nothing about what H-003 means. Its directional reading was withdrawn
+> on H-007's substantive grounds — always-long matched the signal at `p = 0.5041` — not on
+> §9's. A volatility claim clearing a multiple-testing correction is not evidence about
+> direction, and this note exists so the coupling is on the record *before* H-009 runs and
+> cannot be presented afterwards as a rehabilitation. See H-009 §D.
+
+> **It happened. 2026-07-28.** H-009 returned `p = 0.0150`. At `m = 4` the BH step-up finds
+> `k = 2` and **rejects both nulls: H-003 clears `EVALUATION.md` §9 for the first time.**
+>
+> **H-003's directional reading remains withdrawn.** Nothing about H-007's measurement has
+> changed. The clearance is a multiple-testing artefact of a volatility claim entering the
+> family, predicted in writing before it occurred, and it carries no information about
+> direction whatever.
+>
+> It is also **block-sensitive** and must not be quoted without that: H-009's `p` is
+> `0.0008` at block 1, `0.0150` at the registered block 10, and `0.0252` at block 25 — the
+> last of which misses `0.025` and would leave the family rejecting nothing at all. A §9
+> clearance that turns on the fourth decimal place of a nuisance parameter is not a settled
+> clearance.
+
+> **Third note, 2026-07-28 — registering H-011 takes it away again, before H-011 runs.**
+> `N_claims` moves 4 → 5, so the BH critical values become `0.01, 0.02, 0.03, 0.04, 0.05`.
+> The family's available `p` are `0.0150` (H-009), `0.0204` (H-003) and `0.5041` (H-007):
+> rank 1 needs `≤ 0.01`, rank 2 needs `≤ 0.02`, rank 3 needs `≤ 0.03`, and **none holds.**
+> The `k = 2` rejection recorded above is removed at the moment of registration — H-003 and
+> H-009 both stop clearing §9 until H-011 returns `p ≤ 0.03`.
+>
+> **The cost is accepted and is nominal.** H-009 was rejected on its own primary threshold,
+> not on §9; H-003's directional reading was withdrawn on H-007's substantive grounds.
+> Neither result depends on the clearance. What is not nominal is the pattern: this is the
+> third time registering a question has visibly weakened an existing result before any data
+> was touched, and the third time it was written down first. See H-011 §9.
 
 In flight = status REGISTERED or RUNNING.
 
@@ -1892,4 +1934,1175 @@ becomes an explicit term**
 >
 > It is not marked `VOID`. Nothing about it was invalidated; its subject was.
 
-<!-- H-009 onward -->
+### H-009 — Does the feature layer forecast *volatility* at H = 24?
+
+- **Registered:** 2026-07-28 13:02 UTC
+- **Class:** claim — counts toward `N_claims`, taking it **3 → 4**
+- **Status:** REGISTERED
+
+**Why this exists, stated first because it determines how a failure is read**
+
+> H-003 and H-007 established that these three features carry no *directional* information
+> at `H = 24`. That leaves two explanations that no directional experiment can separate:
+> the instrument carries no extractable directional signal, or **the feature layer is not
+> measuring anything at all** — a wiring defect in feature computation, alignment, the
+> fold geometry, the eligibility mask, or the label path.
+>
+> Volatility separates them, because volatility is the one quantity on this instrument
+> where the prior is strong enough that a null result is not attributable to the market.
+> Gold volatility clusters; `realized_vol_24` is a direct measurement of that clustering;
+> and forecasting whether volatility will be above its own recent level one window ahead is
+> close to the easiest honest forecasting problem this data supports.
+>
+> This is therefore a **diagnostic with a strong prior**. Its value is asymmetric and that
+> is deliberate: a PASS says little that is new, a FAIL says something large.
+
+**Claim**
+
+> A logistic combination of `log_return_24`, `realized_vol_24` and `range_position_48`,
+> fitted on the H-001 walk-forward geometry, will achieve **BSS ≥ 0.05** out of sample on
+> the volatility label defined in §B, at a one-sided bootstrap `p` clearing the
+> Benjamini–Hochberg threshold computed in §D.
+
+---
+
+#### §A. Change under test
+
+> Exactly one thing changes from H-001's unshuffled control: **the label**. Same three
+> features, same combiner, same folds, same purge and embargo, same snapshot, same window,
+> same standardiser, same eligibility construction.
+>
+> Files added: `src/labels/volatility.py`, `tests/labels/test_volatility.py`,
+> `scripts/run_h009.py`. **Nothing under `src/` is modified.**
+>
+> **No feature is added, changed, or removed.** This is what makes the run cheap: no new
+> causal-test burden under `CLAUDE.md` Hard Rule 1, because no new feature exists.
+
+> **Amendment, 2026-07-28 13:41 UTC — before the run, and made because a guard fired.**
+>
+> This section first read "one accessor added to `src/models/logistic.py`
+> (`coefficients`, read-only, no arithmetic change) so §G can be reported." That accessor
+> was written, and `tests/evaluation/test_sensitivity.py` failed:
+> `combiner_fingerprint()` moved from `9b09e248…` to `666d3ff7…`.
+>
+> The guard is correct and its firing is not a false positive to be waved through. K-1's
+> sensitivity baseline — which leak modes trip at four parameters — is a property of the
+> combiner, and `REPRODUCIBILITY.md` §6 makes any combiner change without a recorded
+> re-measurement invalidate every subsequent K-1 pass. The fingerprint is an AST hash
+> precisely so it cannot be argued down as "only a comment".
+>
+> There were three available responses and only one of them is honest:
+>
+> | response | verdict |
+> |---|---|
+> | bump `RECORDED_COMBINER_FINGERPRINT` | **no.** `sensitivity.py` names this as "the exact defect §6 prohibits" |
+> | re-run the harness-validation sweep and re-record | legitimate, but it spends a run to enable a diagnostic readout |
+> | **do not change the combiner** | **taken** |
+>
+> §G's prediction is unchanged in substance. What changed is how it is read: instead of
+> the raw weight, the run probes the *fitted model's response* — the change in predicted
+> probability from a one-SD step in `realized_vol_24` with the other standardised features
+> held at zero. The sigmoid is monotone in the linear predictor, so the sign of that
+> response is the sign of the coefficient, and the magnitude is in probability units rather
+> than in units of a standardised weight.
+>
+> The behavioural probe is the better instrument on its own merits under `EVALUATION.md`
+> §14: it interrogates the fitted model from outside rather than reading its internals.
+> That it is also the reading that leaves the guard intact is the point being recorded —
+> **the guard changed the design rather than being adjusted to permit it.**
+
+#### §B. The label — `vol_above_median_24`
+
+> Let `rv = RealizedVol(24)` — the shipped feature, unchanged, causally tested under H-002.
+>
+> ```
+> threshold[T] = median( rv[T-999], ..., rv[T] )          # 1000 values, all <= T
+> label[T]     = 1.0  if  rv[T + 24] > threshold[T]  else  0.0
+> ```
+>
+> **Why `rv[T + 24]` is the forward realised volatility, exactly.** `rv[k]` is the
+> population SD of the one-bar log returns computed from closes `k-24 .. k`. So `rv[T+24]`
+> is the SD of returns from closes `T .. T+24` — the window *after* `T`. The forward
+> quantity is the trailing feature read 24 bars later, so the estimator is identical to the
+> one in the feature column by construction rather than by a second implementation that
+> could drift from it.
+>
+> **The two windows share no returns.** Trailing uses returns indexed `T-23 .. T`; forward
+> uses `T+1 .. T+24`. Disjoint. There is no mechanical correlation from an overlapping bar.
+>
+> **The label looks forward and that is correct** (`src/labels/direction.py` states the same
+> rule). What must *not* look forward is `threshold[T]`, which is a trailing statistic and
+> is held to `DATA_CONTRACT.md` §1 by a truncation test — see §F.
+>
+> **Tie rule:** strict `>`. An exact tie resolves to `0`, matching the direction label's
+> convention. Reported as a tie rate, not left implicit.
+>
+> **Validity.** A label is undefined where the forward window `[T, T+24]` touches an invalid
+> bar (`label_validity`), and where the backward span `[T-1023, T]` does
+> (`feature_validity` at `L = threshold_window + vol_window = 1024`). Never imputed
+> (`DATA_CONTRACT.md` §6).
+
+#### §C. What is reused unchanged, and why that is the point
+
+> | component | reused | note |
+> |---|---|---|
+> | features | `LogReturn(24)`, `RealizedVol(24)`, `RangePosition(48)` | byte-identical to H-001 |
+> | folds | `walk_forward_folds`, 5 folds, `FIRST_TEST_FRACTION = 0.50`, spacing 24 | H-001 |
+> | combiner | `LogisticRegression` + `Standardizer`, 4 parameters | H-001 |
+> | scorer | `brier_skill_score` against in-window climatology | `EVALUATION.md` §3.2 |
+> | K-1 harness | `run_shuffled_label_study`, 30 seeds | `EVALUATION.md` §5.1 |
+> | bootstrap | `backtest.metrics.bootstrap_mean`, stationary, Politis–Romano | H-003 §F |
+>
+> A different label on identical machinery is the only configuration in which a null
+> directional result and a positive volatility result can be attributed to the label rather
+> than to anything else.
+
+#### §D. Primary metric, threshold, and the multiple-testing consequence — stated before the run
+
+> **Primary metric:** pooled out-of-sample Brier Skill Score across the five folds.
+> **Threshold:** `BSS >= 0.05` **and** the §E `p`-value clears Benjamini–Hochberg.
+>
+> `0.05` is not chosen here. It is K-3's materiality floor, which `EVALUATION.md` §5.1
+> already describes as the level "below which 'edge' is not a coherent claim". Using the
+> project's existing floor rather than a fresh one removes a degree of freedom.
+>
+> **A BSS of 0.03 is a FAIL under this registration.** Recording that now so it cannot be
+> reread afterwards as a partial success.
+>
+> **The BH arithmetic, computed in advance.** Registering this claim moves `N_claims` from
+> 3 to 4. At `m = 4, α = 0.05` the step-up critical values are `0.0125, 0.025, 0.0375,
+> 0.05`. The family's observed `p`-values are H-003 `0.0204`, H-007 `0.5041`, H-004 unrun
+> (counts in `m`, can never be rejected), and H-009 `p`.
+>
+> Working the step-up through:
+>
+> | condition | requires |
+> |---|---|
+> | `k = 1` rejects | `min(p, 0.0204) <= 0.0125` → `p <= 0.0125` |
+> | `k = 2` rejects | `max(p, 0.0204) <= 0.025` → `p <= 0.025` |
+> | `k = 3` rejects | `0.5041 <= 0.0375` → impossible |
+>
+> **So H-009's registered BH threshold is `p <= 0.025`.**
+>
+> **And a consequence that must be stated before the run, not discovered after it.** BH is
+> step-up: whenever H-009 clears at `p <= 0.025`, `k = 2` holds and the procedure rejects
+> the two smallest `p`-values — which includes **H-003 at 0.0204**. A volatility result
+> would drag a directional claim across §9's line.
+>
+> > **This does not restore H-003's directional reading, and nothing may later present it as
+> > having done so.** H-003's reading was withdrawn on H-007's substantive grounds —
+> > always-long matched the signal — not on §9's. Clearing a multiple-testing correction is
+> > not evidence about direction. The coupling is a mechanical artefact of putting a
+> > volatility claim and a directional claim in one BH family, which `EVALUATION.md` §9's
+> > "across all hypotheses" wording requires and which is not being reinterpreted here.
+>
+> That artefact is registered as an observation, and the family construction is left alone.
+
+#### §E. The `p`-value, and why it is not the shuffled-labels null
+
+> **Construction.** Per decision `i`, let `d_i = (base_rate − y_i)² − (p_i − y_i)²`, the
+> improvement in squared error over the climatological forecast. `mean(d) > 0` if and only
+> if `BSS > 0`. The `p`-value is one-sided, `H0: mean(d) = 0` against `H1: mean(d) > 0`,
+> from the stationary bootstrap already registered under H-003 §F:
+>
+> | constant | value |
+> |---|---|
+> | expected block | **10**, sensitivity reported at **1** and **25** |
+> | resamples | 10,000 |
+> | seed | 1337 |
+>
+> Identical to H-003 and H-007, so the three are comparable without a caveat.
+>
+> **Why not a permutation `p` from the 30 shuffled seeds.** Its floor is `1/31 = 0.032`,
+> above this hypothesis's own BH threshold of `0.025`. A test whose smallest attainable
+> `p` cannot clear its own threshold cannot pass, and choosing more seeds *after* noticing
+> that would be selecting the instrument to fit the bar. The shuffled-labels study still
+> runs, as K-1, for what it is for.
+
+#### §F. Gates that must clear before the primary metric may be read
+
+> | gate | condition | status if it fails |
+> |---|---|---|
+> | K-1 | shuffled-labels study on **this label**, 30 seeds, all three §5.1 conditions | **halt** — the result is void, not negative |
+> | K-1 fixtures | `label_in_features` and `target_encoding_on_all` must trip | **void** — the gate cannot fire, so its silence means nothing |
+> | K-6 | `>= 150` decisions on the grid | **no result**, not a negative one |
+> | threshold causality | `threshold[T]` bit-identical when recomputed on `df.iloc[:T+1]` | **halt** — K-2 in substance |
+>
+> **K-1 is re-run rather than inherited.** H-001 cleared K-1 for the *direction* label. The
+> label is the one thing changing here, and the label path is exactly where a new leak could
+> enter, so inheriting the clearance would be inheriting it across the change it is meant to
+> cover.
+>
+> **The threshold-causality check ships with an adversarial fixture** — a deliberately
+> centred (non-trailing) threshold that the same check must reject — per `EVALUATION.md`
+> §14. A truncation check that has never failed is indistinguishable from one that cannot.
+
+#### §G. Registered predictions — reported, and explicitly not pass conditions
+
+> Two predictions are recorded now so that agreement is evidence rather than hindsight. Per
+> the H-008 precedent, neither is a pass condition: making a surprising-but-legitimate
+> mechanism a failure builds a gate that fires on correctness.
+>
+> **(i) The fitted model's response to `realized_vol_24` will be positive**, in every fold.
+> Volatility persists, so high current volatility should raise the predicted probability
+> that forward volatility exceeds the six-week median. Measured as the change in predicted
+> probability from a one-SD step in `realized_vol_24` with the other standardised features
+> held at zero — a route that shares nothing with the BSS computation, which is a deliberate
+> application of §14, since a self-check that shares the assumption is what let three of
+> five prior defects through. (See §A's amendment for why this is the probe rather than the
+> raw coefficient.)
+>
+> > A high BSS with a **negative** response is a flag: it means the model is winning for a
+> > reason opposite to the registered mechanism, and the PASS must not be acted on until
+> > that is explained. Flag, not verdict.
+>
+> **(ii) `realized_vol_24` alone will account for most of the skill.** A single-feature
+> variant is reported as an attribution diagnostic.
+>
+> > It is **not a competing configuration and cannot become the primary**, whatever it
+> > scores. The primary is the three-feature model, fixed here. Reporting two and keeping
+> > the better one is metric shopping under `RESEARCH.md` §5.3.
+
+#### §H. A known confound of this diagnostic, and its pre-committed non-rescue
+
+> The threshold adapts to the local volatility level; the feature does not. `Standardizer`
+> is fitted per fold on training rows, so a test era whose volatility level has shifted away
+> from its training prefix will degrade the mapping for reasons that are about
+> non-stationarity rather than about whether the feature layer works.
+>
+> This is real and is not being designed away — designing it away would need a new feature,
+> which would need a causal test, which is the burden this hypothesis exists to avoid.
+> Instead: **per-fold BSS is reported alongside the pooled figure**, so a level-shift
+> signature (strongly positive in some folds, strongly negative in others) is visible rather
+> than confounded into one number.
+>
+> > **Pre-committed:** fold-dependence is *reported* and does **not** rescue a pooled
+> > failure. A feature layer that forecasts volatility in two folds out of five is not a
+> > feature layer the next slice can be built on. If the pooled BSS misses 0.05, the verdict
+> > is FAIL whatever the per-fold pattern looks like.
+
+#### §I. Constants introduced by this hypothesis
+
+> | constant | value | class | note |
+> |---|---|---|---|
+> | horizon `H` | 24 bars | **forced** | matches H-001's registered horizon so the comparison to H-003/H-007 is apples-to-apples |
+> | vol window | 24 bars | **forced** | must equal `H` for `rv[T+H]` to be the forward realised vol |
+> | threshold window | **1000 bars** | **judgement** | ~6 weeks of H1 bars: long relative to volatility's persistence half-life, so the label is a question about level rather than about change; short enough not to be a whole-sample constant, which would import the global distribution into the label |
+> | BSS threshold | 0.05 | **forced** | K-3's existing materiality floor, not a new number |
+> | BH threshold | `p <= 0.025` | **derived** | §D, from `m = 4` and the family's existing `p`-values |
+> | bootstrap block / resamples / seed | 10 / 10,000 / 1337 | **forced** | H-003 §F |
+>
+> **One judgement constant, and it is not swept.** A sensitivity sweep over the threshold
+> window would not be a sensitivity analysis: it changes the label, therefore the question,
+> therefore the hypothesis. Three windows would be three hypotheses under `EVALUATION.md`
+> §9 and metric shopping under `RESEARCH.md` §5.3. 1000 is fixed here, before the run, and
+> is not revisited on the basis of what this run returns.
+
+#### §J. Pre-committed interpretation
+
+> **PASS — `BSS >= 0.05` and `p <= 0.025`, with §F clear.**
+>
+> > The feature layer measures something real, and the pipeline can extract it and score it
+> > out of sample at `H = 24`. The directional null from H-003/H-007 is then a statement
+> > about **direction specifically**, not about the project's wiring. Slice 1 — the
+> > capacity-ceiling measurement — becomes a meaningful test, because a null result from it
+> > could then be attributed to the absence of directional signal rather than to a broken
+> > instrument.
+>
+> **FAIL — anything else.**
+>
+> > **The feature layer itself is in question, not the horizon.** This is the reading, and
+> > it is registered now precisely because the tempting alternative reading — "H = 24 is the
+> > wrong horizon for volatility" — will be available afterwards and is wrong.
+> >
+> > The argument: volatility persistence is the strongest prior available on this
+> > instrument, `realized_vol_24` is a direct measurement of the quantity being forecast,
+> > and the forecast window is the same length as the measurement window. If a direct
+> > measurement of a persistent quantity cannot forecast that quantity one window ahead,
+> > the defect is **upstream** — in feature computation, in bar alignment, in the fold
+> > geometry, in the eligibility mask, or in the label path — and not in the choice of
+> > horizon and not in the market.
+> >
+> > **Required action on FAIL: audit the feature layer against external references, and do
+> > not run slice 1.** A capacity-ceiling measurement on a broken instrument returns a low
+> > ceiling and would be misread as "no signal exists on this instrument" — which is exactly
+> > the false conclusion this hypothesis is ordered first to prevent. The audit is the work;
+> > "investigate further" is not an action and is not what this says.
+>
+> **AMBIGUOUS — `BSS >= 0.05` but `p > 0.025`, or the 95% CI straddling 0.05.**
+>
+> > REJECT, per the template's default. Tie goes to the null.
+
+#### §K. What a PASS licenses, and what it does not
+
+> Licenses: **slice 1 only** — the capacity-ceiling measurement, registered separately
+> before it runs.
+>
+> Does not license: any trading claim, any rung of `EVALUATION.md` §2, any agent. This
+> hypothesis has **no cost model, no baseline ladder, and no trade** — volatility
+> forecastability as defined here is not a tradeable edge and must never be reported as one.
+> The ladder remains halted at rung 2.
+>
+> Explicitly recorded: if slice 1 is registered after a PASS here, **K-1 must be re-measured
+> at the new capacity.** `RETROSPECTIVE.md` §3 measured K-1 blind to `train_test_overlap` at
+> four parameters, and detectability is a property of the estimator. A high-capacity model
+> inherits nothing from the current clearance.
+
+#### §L. Why this is a claim and not a gate
+
+> It reads like machinery-checking, which is what gates do, and the registry's own
+> definition would let it be argued either way. It is registered as a **claim** for two
+> reasons:
+>
+> 1. It asserts skill (`BSS >= 0.05`) on real labels. That is edge-seeking in *form* whatever
+>    the intent, and a false positive here is possible in a way it is not for K-1 or K-2.
+> 2. A PASS is favourable and licenses further work. Anything that can license work by
+>    coming out one way is something there is an incentive to shop for, and the correction
+>    exists for exactly that.
+>
+> Counting it costs `N_claims` and tightens every threshold in the family, including its
+> own. That is the conservative direction and it is the right one.
+
+**Sample size expected**
+
+> ~1,300 decisions on the registered grid, against K-6's floor of 150. Slightly below
+> H-003's 1,364 because the 1,024-bar backward span invalidates more of the series head than
+> the 48-bar feature lookback did. Exact count reported before the verdict; label-free, so
+> it is known without seeing a result.
+
+**Dataset & window**
+
+> Snapshot `71f9fcf1…`, window `2015-09-11` → `2026-07-26` (H-006). Walk-forward, five
+> folds. **The sealed holdout is not opened and is not involved.**
+
+--- RUN ---
+
+- **Run manifest:** `runs/dc0f40bc-422c-433f-8790-4567a0408843.json`,
+  sha256 `0c2ed357abf70ebe9597922968a0cfca1ceba8fdd0ae8fd8aa79248ff9152f89`
+- **Executed:** 2026-07-28, commit `ea4dc33`, clean tree
+- **Registration commit:** `8e01d7d` — provably before `ea4dc33`, which added the code
+- **Verdict:** **REJECTED**
+
+**Setup as executed**
+
+> 65,395 in-window bars, 12 invalid. Label defined on 59,976; eligible 59,976; **1,333
+> decisions** on the registered grid, K-6 clear at 8.9x. Base rate `0.489872`, **zero ties**.
+>
+> Fold 0 carries 242 decisions against the other folds' 273, and reports `purged = 0` where
+> H-001 reports 24. Checked rather than assumed: the two unexplained 2021-01-21 gaps sit at
+> bars 32404-32405, and the label's 1,024-bar backward span poisons `[32404, 33428]`, which
+> straddles fold 0's `test_start` of 32697. All 24 purge candidates were already ineligible,
+> so **the purge found nothing left to purge** rather than failing to run. `731 / 24 = 30.5`
+> grid points lost, and 31 are missing. The wider backward span makes each invalid bar
+> poison 1,024 bars where a 48-bar feature lookback poisoned 48.
+
+**Gates**
+
+> | gate | result |
+> |---|---|
+> | K-1 on this label, 30 seeds | **PASS** — mean BSS `-0.000834`, CI `[-0.001394, -0.000445]`, median `-0.000435`, max `+0.000479` |
+> | `label_in_features` fixture | TRIPPED, `+0.999984` |
+> | `target_encoding_on_all` fixture | TRIPPED, `+0.241980` |
+> | K-6 | 1,333 vs 150 |
+> | threshold causality + adversarial fixture | enforced in CI, 454 tests green |
+
+**Primary metric**
+
+> | | |
+> |---|---|
+> | **pooled BSS** | **`+0.024157`**, n = 1,333 |
+> | registered threshold | `>= 0.05` — **NOT CLEARED** |
+> | BS model / climatology | `0.243861` / `0.249897` |
+>
+> Per fold: `-0.010530` (n=242), `+0.021558`, `+0.010775`, `+0.024594`, `+0.064928`.
+
+**Significance**
+
+> | block | mean d | 95% CI of mean d | one-sided p | BSS CI |
+> |---|---|---|---|---|
+> | 1 | `+0.006037` | `[+0.002368, +0.009662]` | `0.0008` | `[+0.0095, +0.0387]` |
+> | **10 (registered)** | `+0.006037` | `[+0.000972, +0.011532]` | **`0.0150`** | **`[+0.0039, +0.0461]`** |
+> | 25 | `+0.006037` | `[+0.000455, +0.012077]` | `0.0252` | `[+0.0018, +0.0483]` |
+>
+> **The BSS interval excludes 0.05 from below at all three block lengths.** This is not the
+> AMBIGUOUS branch and not a knife-edge: the threshold is outside the interval, not inside it.
+
+**The registered predictions, scored**
+
+> | prediction | outcome |
+> |---|---|
+> | §G (i) response to `realized_vol_24` positive in every fold | **confirmed 5/5** — `+0.0840, +0.0824, +0.0837, +0.0800, +0.0828` |
+> | §G (ii) `realized_vol_24` accounts for most of the skill | **confirmed** — alone it scores `+0.023485`, **97.2%** of the three-feature BSS |
+> | §E mean(d) > 0 | confirmed, `p = 0.0150` |
+> | §D BH coupling to H-003 | fired exactly as written, see below |
+>
+> The probe reproduced the evaluation path's probabilities bitwise, so the refit is the same
+> model rather than a second implementation asserted to be equivalent.
+
+**Verdict: REJECTED, and the reason the FAIL branch's argument does not survive its own run**
+
+> `BSS +0.024157 < 0.05`. The threshold was registered at K-3's existing materiality floor
+> before the run and it does not move. **H-009 is rejected.**
+>
+> **And the §J FAIL branch is wrong on the facts, which is a defect in this registration and
+> is recorded as one.** §J justified its action with: "if a direct measurement of a
+> persistent quantity cannot forecast that quantity one window ahead, the defect is
+> upstream." The run measured that it **can** forecast it — significantly, through the
+> predicted mechanism, with the predicted feature carrying 97.2% of the effect and the
+> predicted sign in all five folds. Four pre-registered predictions were confirmed. The
+> antecedent of §J's argument is false.
+>
+> **What went wrong in the registration:** it set a binary threshold on a diagnostic whose
+> informative content was not binary, and it registered the *sign* and the *attribution* of
+> the effect while registering nothing about its *magnitude* — and magnitude is what decided
+> the verdict. "Does the feature layer work" and "does it reach BSS 0.05" were bound together
+> as one question when they are two, and no prediction was recorded that would let this run
+> distinguish "the layer is lossy" from "the label is harder than assumed".
+>
+> **The action stands anyway. Slice 1 is not run.** §J's required action was registered
+> before the result and is not being overridden on the basis of the result, which is the
+> whole mechanism this registry exists to enforce. A registration that turns out to have
+> been poorly constructed is corrected by a **new hypothesis**, registered before it runs —
+> never by rereading the old one in the light of what it returned. `RESEARCH.md` §5.2 does
+> not carve out an exception for registrations whose author later disagrees with them.
+>
+> What the project may now assert, and no more: **the feature layer is connected to the
+> label through the registered mechanism, and the effect it carries is below the materiality
+> floor the project set for itself.** Whether that magnitude indicts the feature layer, the
+> four-parameter combiner, or the difficulty of the label is **unresolved, and this run
+> cannot resolve it** because no prediction was registered that would have separated them.
+
+**§9 — the BH consequence, which fired as written**
+
+> `p = 0.0150 <= 0.025`. At `m = 4` the step-up finds `k = 2`: sorted `p` are `0.0150`
+> (H-009) and `0.0204` (H-003), and `0.0204 <= 2/4 x 0.05 = 0.025`. **Benjamini-Hochberg
+> rejects both nulls.** H-003 clears `EVALUATION.md` §9 for the first time in the project's
+> life.
+>
+> **H-003's directional reading is not restored and nothing may present it as restored.**
+> It was withdrawn on H-007's substantive grounds — always-long matched the signal at
+> `p = 0.5041` — not on §9's. This consequence was written into §D and into H-003's own
+> entry *before* this run for exactly this reason.
+>
+> **Reported without softening: the coupling is block-sensitive.** At the registered block
+> `p = 0.0150` and at block 1 `p = 0.0008`, both clearing. At block 25 `p = 0.0252`, which
+> **misses 0.025 by 0.0002** and would leave the family rejecting nothing. A cross-hypothesis
+> consequence that turns on the fourth decimal place of a nuisance parameter is not a robust
+> consequence, and H-003's §9 clearance should be read as holding at the registered block and
+> failing at the stress block rather than as settled.
+
+**Notes**
+
+> - No cost model, no trade, no baseline ladder, no holdout. H-005's deviation does not
+>   apply and no `EVALUATION.md` §10 claim is made. The ladder remains halted at rung 2.
+> - `src/` was not modified for this run — see §A's amendment. `models/logistic.py` is
+>   byte-identical, so K-1's recorded sensitivity baseline still describes this combiner.
+> - Any new idea in this block becomes a **new hypothesis**, not an amendment to this one.
+
+---
+
+## 6. Capacity — separating the three explanations H-009 named and could not resolve
+
+H-009's verdict block states the open question in the project's own words:
+
+> "Whether that magnitude indicts the feature layer, the four-parameter combiner, or the
+> difficulty of the label is **unresolved, and this run cannot resolve it** because no
+> prediction was registered that would have separated them."
+
+| # | explanation | status after H-009 |
+|---|---|---|
+| A | **the features** are lossy — they carry the mechanism but little of it | untested against the alternatives |
+| B | **the combiner** — four parameters — cannot express what is there | untested directly; see the positive control below |
+| C | **the label** — 24-bar direction, ε = 0.01 — is harder than assumed | untested |
+
+The proposed slice 1 (≈50 candidate features at higher capacity) changes **feature count
+and capacity simultaneously** and would return a number that A, B and C all explain.
+H-010 and H-011 exist to remove B from the list first, because B is the cheap axis: the
+same features, the same label, the same folds, the same snapshot, a larger combiner.
+
+**H-009 is already a partial positive control for B, and it points against B.** The same
+four-parameter combiner, on the same three features, over the same folds and window,
+extracted `BSS +0.024157` at `p = 0.0150` on the volatility label — with
+`realized_vol_24` alone accounting for 97.2% of it. Four parameters are demonstrably able
+to express real structure in these features **when there is structure to express.** That
+is a prior, not a result: volatility is more persistent and more autocorrelated than
+direction, so a class adequate for one is not thereby adequate for the other. H-011
+registers the prediction that follows from it and scores it, rather than assuming it.
+
+**This section corrects a defect H-009 recorded in itself.** H-009 §J "registered the
+*sign* and the *attribution* of the effect while registering nothing about its
+*magnitude* — and magnitude is what decided the verdict." Two questions were bound to one
+threshold. H-011 registers three statements, three metrics, three thresholds.
+
+---
+
+### H-010 — K-1 sensitivity re-measured at every capacity rung
+
+- **Registered:** 2026-07-28 UTC
+- **Class:** gate — does not count toward `N_claims`
+- **Status:** **REJECTED** — the four pass conditions are "all required", and (iv) cannot
+  be satisfied at C-3, C-4 or C-5. Passes at C-0, C-1, C-2. H-011 does not execute.
+- **Order:** must PASS before H-011 executes. An H-011 run that predates this gate's
+  result is **VOID**, not "pending confirmation".
+
+**What this is**
+
+> `REPRODUCIBILITY.md` §6 already states the rule and already enforces it:
+> `src/evaluation/sensitivity.py` holds `RECORDED_COMBINER_FINGERPRINT` alongside the
+> recorded baseline, and `tests/evaluation/test_sensitivity.py` fails the build when the
+> fingerprint moves without a matching re-measurement.
+>
+> This is not a new rule. It is the registration of the measurement that rule demands,
+> **written before the combiner changes rather than after** — because the guard fails the
+> build without saying what the answer must be, and a build failure is repaired by editing
+> constants. `EVALUATION.md` §14: three of five instrument defects had a self-check that
+> agreed with them, because the self-check shared the assumption. A re-measurement whose
+> pass condition is written after seeing its own output is that shape exactly.
+
+**A gap in the existing guard, found while registering this and fixed by it**
+
+> The fingerprint is taken over `src/models/logistic.py`. H-011 raises capacity by
+> **expanding the design matrix**, not by editing the estimator — so `logistic.py` stays
+> byte-identical and **the guard as built would not fire.** `RECORDED_N_FEATURES = 3` and
+> `RECORDED_PARAMETER_COUNT = 4` would silently continue to describe a 20-parameter fit.
+>
+> H-009's Notes relied on exactly this property in the safe direction ("`models/logistic.py`
+> is byte-identical, so K-1's recorded sensitivity baseline still describes this combiner"),
+> which was true there and is *not* true here. The guard must key on the **effective
+> parameter count of the fitted design matrix**, not on the estimator module's AST alone.
+> Extending it is a required deliverable of this gate, listed in H-011's scope item 5.
+>
+> This is a gate that would have passed for the wrong reason. `REPRODUCIBILITY.md` §10.
+
+**Measurement**
+
+> The full leak-fixture suite at every rung of H-011's capacity ladder: five modes
+> (`none`, `label_in_features`, `target_encoding_on_all`, `train_test_overlap`,
+> `scaler_fit_on_all`), 30 seeds (0–29), 30,000 synthetic bars — the harness that produced
+> the 4-parameter baseline (`run_id` `5c6c585b-7531-48bd-945c-8c077b759a05`, commit
+> `7d6ed38`). One re-measurement per rung, **under both fitting rules H-011 registers**
+> (frozen 1,000 iterations, and the convergence stop).
+>
+> `run_type` is `harness_validation`. It carries no `hypothesis_id` for H-011 and is never
+> evidence for it — it is a record of gate behaviour, as the 4-parameter baseline is.
+
+**Pass condition — four parts, all required**
+
+> | # | condition |
+> |---|---|
+> | i | **Capability.** `label_in_features` reaches BSS ≥ 0.99 at every rung, under both fitting rules. |
+> | ii | **Reproduction.** C-0 under the *frozen* rule reproduces `RECORDED_MEAN_BSS` to within `1e-9` on all five modes. The degree-1 expansion is the identity, so anything else is a defect in the expansion, not a finding. |
+> | iii | **Recording.** The tripping and silent sets are recorded per rung per fitting rule in `sensitivity.py`. |
+> | iv | **Null re-measured.** The K-1 null (30 seeds, permuted labels, `LeakMode.NONE`) is re-measured at every rung under the rule H-011 will use, and K-1 is evaluated against *that* null. H-001's null is not reused. |
+>
+> **FAIL at a rung → K-1 halt at that rung.** H-011 may execute only at rungs that passed.
+> A failed rung is recorded and excluded; it is not worked around, and the ladder is not
+> shortened to avoid it.
+
+**The capability test transfers. Here is what does not.**
+
+> | item | transfers? | why |
+> |---|---|---|
+> | `label_in_features` ≈ 1.0 | **yes** | detecting a planted label is a floor any usable combiner meets at any capacity. This is the one H-001 §Estimator names, and it is the one that survives. |
+> | K-6 clearance (1,364 ≥ 150) | **yes** | label-free and capacity-free; the decision grid is unchanged. Known before the run, as in H-003, H-007 and H-009. |
+> | purge/embargo integrity | **yes** | a property of the split, not of the estimator. |
+> | `scaler_fit_on_all` staying silent | **the reason, not the number** | it carries no label information at any capacity. Its *measured* −0.001390 is a property of a 4-parameter fit. |
+> | `train_test_overlap` staying silent | **no** | `REPRODUCIBILITY.md` §6 says so by construction: undetectable at four parameters, detectable as capacity grows. At 56 parameters a fit may memorise 273 folded rows. |
+> | `target_encoding_on_all` = +0.239781 | **no** (magnitude) | tripping is expected to transfer; the value is a property of the fit and is re-recorded. |
+> | the K-1 null itself: mean −0.000855, CI upper −0.000577, max +0.000757 | **no** | an unregularised 56-parameter fit on permuted labels overfits the training folds. Its out-of-sample null is expected to be wider and more negative. Comparing a high-capacity edge against a low-capacity null is a leakage gate that has quietly stopped being one. |
+> | H-001's `ACCEPTED` | **no** | `REPRODUCIBILITY.md` §6: "A combiner change without a recorded sensitivity re-measurement invalidates every subsequent K-1 pass." |
+> | H-009's reliance on `logistic.py` being byte-identical | **no** | true for H-009, false here — see the guard gap above. |
+
+**If `train_test_overlap` starts tripping**
+
+> That is the gate becoming sharper, not a leak appearing in the pipeline. It is recorded
+> as such **and then checked rather than assumed**: the Tier 1 purge/embargo integrity
+> check is re-run and its result cited alongside. "The fixture leaks by construction and
+> the real splits do not" is a claim with a test behind it; asserting it without citing the
+> test is the §14 pattern again.
+
+**`EVALUATION.md` §14 compliance — stated explicitly, because §14 requires it of every gate**
+
+> | | |
+> |---|---|
+> | **adversarial fixture** | the five-mode leak suite. It exists (`evaluation/pipeline.py` `LeakMode`) and is reused unchanged. |
+> | **external reference** | a second, independent solver for the same convex objective — **IRLS / Newton–Raphson**, test-only, never imported by `src`. The production gradient-descent fit must agree with it on fitted probabilities to `1e-6` max absolute deviation on a fixed synthetic fixture at every rung. |
+>
+> §14 requires at least one. This gate carries both, and the reason to carry both is that
+> they fail differently: the fixture proves the gate can see a leak, the reference proves
+> the *optimiser* found the solution it claims to have found. Neither substitutes for the
+> other, and a larger combiner is exposed to the second failure in a way a 4-parameter one
+> is not.
+>
+> IRLS is a genuine external reference and not a re-reading: it uses second-order
+> information the production path never computes, so an error in the step rule, the
+> learning rate, or the iteration budget surfaces as disagreement rather than as agreement
+> on a wrong answer.
+
+**Pre-committed interpretation**
+
+> - **PASS:** H-011 executes, at the rungs that passed.
+> - **FAIL at C-3 (H-011's primary rung):** H-011 does not execute at all. Halt and report
+>   that the capacity question cannot be answered with a gate that cannot see a planted
+>   leak at that capacity. This is not a negative result about capacity — it is no result.
+> - **FAIL at a non-primary rung:** that rung is excluded from the reported profile and the
+>   exclusion is stated in the result, not in an appendix.
+
+--- RUN ---
+
+- **Executed:** 2026-07-28, commit `4e3d9eb`, clean tree
+- **Rows:** `runs/h010_frozen.json`, `runs/h010_convergent.json`
+- **Registration precedes the code:** registration `312d9ba`, guard fix `8f3291a`,
+  machinery `4e3d9eb`. §2 rule 1 satisfied.
+- **Data:** 30,000 synthetic bars, seed 42; 834 pooled decisions across 5 folds; 30 seeds
+  per configuration. `run_type: harness_validation`, no `hypothesis_id` — a record of gate
+  behaviour, never evidence for H-001 or H-011.
+- **Verdict:** **PASS at C-0, C-1, C-2. FAIL at C-3, C-4, C-5** — condition (iv) is not
+  satisfiable there. **H-011 does not execute.**
+
+**Condition (ii) — reproduction — holds, and the condition itself was mis-registered**
+
+> C-0 under the frozen rule reproduces `RECORDED_MEAN_BSS` on all five modes:
+> `none` `-0.001390`, `label_in_features` `+0.999984`, `target_encoding_on_all`
+> `+0.239781`, `train_test_overlap` `-0.000901`, `scaler_fit_on_all` `-0.001390`. Identical
+> at every recorded digit. The degree-1 expansion is the identity, so this was the outcome
+> that would have indicted the expansion rather than taught anything, and it did not.
+>
+> **The registered tolerance was `1e-9` against a record carried to six decimal places.**
+> That comparison cannot be made: the record does not hold the digits it would need. What
+> is checkable — exact agreement at the recorded precision — holds. Recorded as a defect in
+> this registration rather than silently reinterpreted.
+
+**Condition (i) — capability — holds at every rung**
+
+> `label_in_features` reaches `+0.999984` at 5, 8, 11, 21, 36 and 57 fitted parameters.
+> The transferable requirement transferred.
+
+**The frozen-rule table — 30 seeds, mean BSS, with fitted parameter count**
+
+> | rung | p | `none` | `label_in_features` | `target_encoding_on_all` | `train_test_overlap` | `scaler_fit_on_all` |
+> |---|---:|---:|---:|---:|---:|---:|
+> | C-0 | 4 | −0.001390 | **+0.999984** | **+0.239781** | −0.000901 | −0.001390 |
+> | C-1 | 7 | −0.001754 | **+0.999984** | **+0.239659** | −0.000949 | −0.001754 |
+> | C-2 | 10 | −0.001850 | **+0.999984** | **+0.239460** | −0.000856 | −0.001850 |
+> | C-3 | 20 | −0.002345 | **+0.999984** | **+0.239245** | −0.000666 | −0.002344 |
+> | C-4 | 35 | −0.129314 | **+0.999984** | **+0.238961** | −0.130000 | −0.129032 |
+> | C-5 | 56 | −0.390547 | **+0.999984** | **+0.084102** | −0.392723 | −0.390467 |
+>
+> Bold trips. The tripping set is `{label_in_features, target_encoding_on_all}` at every
+> rung and the silent set is `{train_test_overlap, scaler_fit_on_all}` at every rung —
+> **unchanged from four parameters to fifty-six.** The modes that append a column fit one
+> parameter more than the rung declares, which is a property of the fixture and is recorded
+> beside each row rather than absorbed.
+
+**At what parameter count does `train_test_overlap` stop being silent**
+
+> **It does not. Not at any point on this ladder.** That is the answer, and it is not the
+> one the guard's own documentation predicted.
+>
+> `REPRODUCIBILITY.md` §6 says the leak "becomes detectable as capacity grows". Measured
+> against the clean null at the same rung, it does:
+>
+> | rung | p | clean null | `train_test_overlap` | excess |
+> |---|---:|---:|---:|---:|
+> | C-0 | 4 | −0.001390 | −0.000901 | **+0.000489** |
+> | C-1 | 7 | −0.001754 | −0.000949 | **+0.000805** |
+> | C-2 | 10 | −0.001850 | −0.000856 | **+0.000994** |
+> | C-3 | 20 | −0.002345 | −0.000666 | **+0.001679** |
+> | C-4 | 35 | −0.129314 | −0.130000 | −0.000686 |
+> | C-5 | 56 | −0.390547 | −0.392723 | −0.002176 |
+>
+> The excess rises monotonically from 4 to 20 parameters and roughly triples. The mechanism
+> §6 describes is real and is now measured rather than asserted. **It is also two orders of
+> magnitude short.** At 20 parameters the leak shows up as `+0.00168` against a trip
+> threshold of `0.05` — a factor of thirty — and above 20 parameters the excess turns
+> *negative*, because the estimator has stopped fitting.
+>
+> **K-1's known blind spot is not closable by capacity within this estimator family.**
+> Closing it needs a different family — the gradient-boosted stacker `EVALUATION.md` §2
+> rung 7 names — and that is a different change requiring its own ID. The blind spot stays
+> open, and it stays open for a reason that is now measured instead of assumed.
+
+**Why C-4 and C-5 fail, and why "K-1 passed" there means nothing**
+
+> At C-4 and C-5 the clean null collapses to `−0.129` and `−0.391`. K-1's three registered
+> conditions all hold at those numbers — CI upper below ε, no seed reaching 0.05, median
+> below zero — so the gate returns **PASS**.
+>
+> **It is a vacuous pass.** The gate is satisfied because an unregularised 35- and
+> 56-parameter fit at a thousand gradient steps produces out-of-sample probabilities worse
+> than climatology by a wide margin, not because no leak is present. A gate that passes
+> because the instrument stopped working is `REPRODUCIBILITY.md` §10 exactly: a gate that
+> passes for a reason nobody can state is not a working gate. It is recorded here as a pass
+> that must not be cited.
+>
+> Corroborating, from the same run: `target_encoding_on_all` falls from `+0.239` to
+> `+0.084` at C-5 — the one leak a low-capacity linear model reads most easily is becoming
+> hard to read, within 1.7x of the trip threshold. The instrument is degrading, and it
+> degrades toward silence, which is the direction that hides failures.
+
+**Condition (iv) — the null re-measured under the rule H-011 will use — cannot be met**
+
+> The convergence rule is `grad_inf <= 1e-6`, cap `1e6`. Measured on the largest training
+> pool (fold 4, n = 25,929), with the Gram condition number that explains it:
+>
+> | rung | p | cond(gram) | gradient at 1e3 | 1e4 | 1e5 | reaches 1e-6? |
+> |---|---:|---:|---:|---:|---:|---|
+> | C-0 | 4 | 1.21e+01 | — | — | — | **yes, 337 iterations** |
+> | C-1 | 7 | 5.41e+02 | 1.33e-04 | — | — | **yes, 8,664** |
+> | C-2 | 10 | 4.52e+03 | 1.86e-04 | 3.52e-06 | — | **yes, 17,618** |
+> | C-3 | 20 | 1.04e+06 | 2.42e-04 | 1.46e-04 | 4.62e-05 | not by 1e5 |
+> | C-4 | 35 | 1.82e+08 | 1.63e-01 | 1.57e-01 | 1.51e-01 | **stalled** |
+> | C-5 | 56 | 2.87e+10 | 2.89e-01 | 2.80e-01 | 2.74e-01 | **stalled** |
+>
+> The condition number of the polynomial design rises by nine orders of magnitude across
+> the ladder. First-order descent at a fixed step needs `O(kappa)` iterations, and at C-4
+> the gradient moves from `0.1634` to `0.1510` across a hundredfold increase in iterations.
+> That is not slow convergence. It is a stall.
+>
+> **C-3 is different and the difference was measured rather than extrapolated.** At the
+> registered `1e6` cap on the *smallest* fold (n = 9,929) it converged: **533,168
+> iterations, gradient `1.0000e-06`, 216 s**. So C-3 is reachable — and reaching it for the
+> full suite is 5 folds x 5 modes x 30 seeds at that cost, on the order of **150 hours for
+> one rung**. Reachable and unaffordable are different findings and are reported as
+> different findings. The largest-fold measurement at the full cap was started and stopped
+> to free the machine for the sweep; it is not reported as completed.
+
+**A second mechanism, independent of conditioning, that blocks (iv) at every rung**
+
+> The convergent sweep was launched for C-0, C-1 and C-2 — the rungs the conditioning
+> analysis says are reachable. It completed **one cell**: `C-0 / none`, mean BSS
+> `-0.001389` against the frozen rule's `-0.001390`, converged, 13.1 s. It then spent
+> twelve minutes on `C-0 / label_in_features` without finishing, and was stopped and
+> measured directly instead.
+>
+> | C-0, fold 0 | cond(gram) | iterations to `1e-6` | time, one fold |
+> |---|---:|---:|---:|
+> | clean design | 1.209e+01 | **314** | 0.0 s |
+> | + planted label | 1.235e+01 | **426,723** | **72.7 s** |
+>
+> **The conditioning is the same. The cost is 1,359x.** The cause is not the Gram matrix —
+> it is **separability**. Appending the label makes the training set perfectly separable,
+> so the unpenalised optimum is at infinity and the `1e-6` ridge only pulls it back to a
+> very large finite value that first-order descent approaches asymptotically. The gradient
+> falls `2.0e-03 -> 1.96e-04 -> 1.49e-05 -> 1.0e-06` across three decades of iterations,
+> and converges only in the last decade before the cap.
+>
+> The capability fixture is therefore ~3 hours per rung under the convergence rule at the
+> **cheapest** rung, before any conditioning problem is reached. **Condition (iv) is
+> unaffordable at every rung on the leak fixtures and unreachable at C-3 and above on all
+> of them.** Two independent mechanisms, neither named in the registration, each sufficient
+> on its own.
+>
+> Both are properties of pairing a first-order optimiser with a fixed step size to
+> objectives whose optima are either ill-conditioned or at the boundary. Neither is a
+> property of capacity, which is what H-011 set out to vary.
+
+**What this does to H-011**
+
+> H-011's primary rung is C-3 and its primary fitting rule is the convergence stop. **That
+> combination is not executable.** Under the pre-committed interpretation above, the FAIL
+> branch at C-3 is active: **H-011 does not execute at all.**
+>
+> The correct action is the registered one. H-011 is not rerun at C-2 to get a number, and
+> its primary rung is not moved: choosing the rung after seeing which ones are affordable
+> is `RESEARCH.md` §5.2, and the fact that the constraint is computational rather than
+> statistical does not change what selecting on it would be. A registration that turns out
+> to be unexecutable is corrected by a **new hypothesis**, registered before it runs.
+>
+> H-011 stays `REGISTERED` and unexecuted. It is not `VOID`: nothing about it was
+> invalidated, and its `N_claims` draw stands — the question was asked, and the answer is
+> that this instrument cannot answer it.
+
+**What was learned that no registration anticipated**
+
+> The capacity axis was chosen because it was the cheap one: same features, same label,
+> same optimiser, one number changing. It is cheap in every respect except the one that
+> turned out to bind. **Raising the parameter count of a polynomial design raises the
+> condition number far faster than it raises the parameter count** — 4 to 56 parameters is
+> 14x; 12 to 2.9e10 in conditioning is nine orders of magnitude — and a first-order
+> optimiser is the wrong instrument at the far end of that. Nothing in the registration
+> mentioned conditioning. It is the constraint that decided the run.
+>
+> The registration reasoned carefully about *one* way the optimiser could produce a fluent
+> wrong answer — a fixed budget silently underfitting — and built a VOID condition for it.
+> That reasoning was right, and the measurement confirms it: at C-3 the frozen fit
+> demonstrably disagrees with IRLS. What it did not anticipate is that the fix has its own
+> failure modes, that there are two of them, that they are unrelated to each other, and
+> that neither is about capacity. **Registering a guardrail against a known failure is not
+> the same as knowing the instrument**, and the gap between those two is where this run
+> ended up.
+
+**Recorded for whatever replaces H-011**
+
+> Not amendments — H-011 is not edited. These are the measured facts a successor
+> registration would have to answer, written down while they are fresh:
+>
+> 1. A polynomial basis on three features is a badly conditioned capacity axis. Any
+>    successor either orthogonalises the basis, or uses a second-order solver, or does not
+>    use polynomials.
+> 2. The capability fixture is separable by construction, so *any* convergence criterion
+>    stated as a gradient tolerance is expensive on it. A successor states its capability
+>    criterion in a form separability does not blow up — a fitted-probability threshold, or
+>    a tolerance on the *change* in fitted probabilities rather than on the gradient.
+> 3. The frozen rule ran the entire ladder in under an hour and reproduced the recorded
+>    baseline exactly. It is a usable instrument for what it measures; what it cannot do is
+>    support a claim about capacity, because above 20 parameters it stops fitting.
+
+---
+
+### H-011 — Capacity alone: is the four-parameter combiner the binding constraint?
+
+- **Registered:** 2026-07-28 UTC
+- **Class:** **claim** — counts toward `N_claims`, taking it **4 → 5**
+- **Status:** REGISTERED
+- **Order:** after H-010 passes. Before any feature-set change.
+
+**Claim**
+
+> Holding the three registered features, the registered direction label, the registered
+> folds and the registered snapshot fixed, and increasing **only** the combiner's parameter
+> count from 4 to 20, out-of-sample pooled Brier Skill Score improves by at least **+0.010**
+> absolute, the per-decision Brier improvement is positive at one-sided `p ≤ 0.01`, and at
+> least **half** of the improvement is resolution rather than reliability.
+
+**What this separates, and what it deliberately does not**
+
+> It removes explanation **B** from §6's list, in one direction or the other. It does not
+> touch **A** or **C**, and no result here licenses a statement about either.
+>
+> If BSS moves materially with capacity alone, the four-parameter estimator was the binding
+> constraint, and **slice 1 is answering the wrong question** — the right next question
+> would be capacity, not breadth. If it does not move, capacity is excluded over the range
+> tested and slice 1 becomes interpretable, because a null result there can no longer be
+> explained by the combiner.
+
+**Held fixed / changed**
+
+> | | |
+> |---|---|
+> | features | `log_return_24`, `realized_vol_24`, `range_position_48` — **exactly three, unchanged** |
+> | label | 24-bar **direction**, materiality floor ε = 0.01 (H-001). Not H-009's volatility label. |
+> | window | `window_start` 2015-09-11 (H-006), snapshot `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6` |
+> | folds | 5 walk-forward, `FIRST_TEST_FRACTION` 0.50, 24-bar decision spacing, purge + embargo (H-001) |
+> | n | 1,364 pooled decisions, 272–273 per fold — **identical rows, identical order, in every arm** |
+> | metric | out-of-sample pooled BSS on true labels — H-001's unshuffled control, same code path |
+> | **changed** | **the number of free parameters in the combiner. Nothing else.** |
+
+**The capacity ladder — fixed before running**
+
+> The same `LogisticRegression`, the same convex objective, the same optimiser, fed a
+> deterministic polynomial basis expansion of the same three columns.
+>
+> | rung | design matrix | parameters | rows per parameter |
+> |---|---|---:|---:|
+> | **C-0** | degree 1 — H-001 unchanged | **4** | 8,047:1 |
+> | C-1 | + pure squares | 7 | 4,598:1 |
+> | C-2 | full degree 2 | 10 | 3,219:1 |
+> | **C-3** | **full degree 3** | **20** | **1,609:1** |
+> | C-4 | full degree 4 | 35 | 920:1 |
+> | C-5 | full degree 5 | 56 | 575:1 |
+>
+> 14× capacity across the ladder. The training pool is 32,188 rows (H-001's split table),
+> so **sample size is not the binding constraint at any rung** — the same argument H-001
+> used to dismiss "more training data" as a reason for a later split applies here in
+> reverse. The ladder stops at 56 because of estimator-family purity, not data.
+
+**Why a basis expansion is "the same features"**
+
+> No new measurement enters. Every column is a deterministic, label-free, pointwise
+> function of the three registered features on the same row. What grows is the function
+> class over them, which is the definition of capacity.
+>
+> Stated the other way, because it is the objection a reader should raise: the *design
+> matrix* does change, and someone could call C-3 "twenty features". The distinction that
+> matters is that no new information about the market is introduced, so a BSS gain cannot
+> be attributed to data the four-parameter model did not have. That is exactly the
+> attribution slice 1 cannot make.
+
+**Why the estimator family does not change**
+
+> A tree ensemble or an MLP would raise capacity further and faster. Both would also change
+> the optimiser, the initialisation, the non-convexity of the objective, and the seed
+> surface — four changes bundled with the one under test, violating §2 rule 4, and leaving
+> any difference unattributable in precisely the way H-007 was designed to avoid.
+>
+> A non-linear estimator family is a **separate hypothesis with its own ID**. It is
+> registered only if H-011 returns "did not move" at C-3 *and* the profile across C-0…C-5
+> is flat — i.e. only if the polynomial family has been shown to be an inadequate probe
+> rather than an adequate one that found nothing.
+
+**What is NOT changed, and why each would have been a second change**
+
+> | | |
+> |---|---|
+> | regularisation | **none added.** An L2 term is a hyperparameter, and a hyperparameter is a surface to tune until the answer is agreeable. The higher rungs are therefore unregularised, which is a real cost — see the pre-committed reading of a *negative* ΔBSS. |
+> | standardisation | the existing `Standardizer`, **fit on training folds only**, applied to the expanded matrix. Fitting it on all rows is `scaler_fit_on_all`, a registered leak mode. |
+> | learning rate | 0.5, unchanged. |
+> | bootstrap | block 10, sensitivity at 1 and 25, 10,000 resamples, seed 1337 — H-003 §F, inherited unchanged, as H-009 §C inherited it. |
+> | decision grid | unchanged, and label-free, so K-6 clearance (9.1×) is known before the run. |
+
+**The iteration budget is a convergence parameter, not a capacity parameter**
+
+> This is the single most likely way this hypothesis produces a fluent wrong answer, so it
+> is registered as a design decision rather than left as an implementation detail.
+>
+> 1,000 iterations at learning rate 0.5 suffices for 4 parameters. On 56 correlated
+> polynomial terms it may not converge — and a non-converged fit *underfits*, which reads
+> as "capacity did not help". The conclusion "the four-parameter combiner was not the
+> binding constraint" would then be an artefact of the optimiser budget, internally
+> consistent and wrong: `EVALUATION.md` §14's pattern, in a new instrument.
+>
+> **Primary path — convergence stop, applied at every rung including C-0.** Iterate until
+> the gradient infinity-norm at the current parameters is ≤ `1e-6`, cap `1e6` iterations.
+> Report iterations used per rung per fold. This removes optimisation error from the
+> comparison so that capacity is the only difference.
+>
+> **Secondary path — frozen 1,000 iterations at every rung.** Reported alongside, so the
+> H-001-comparable number exists and so the difference between the two paths is visible
+> rather than absorbed.
+>
+> **The C-0 convergence gap is a first-class output, not a footnote.** If
+> `|BSS(C-0, converged) − (−0.006766)|` exceeds the did-not-move band, then part of
+> H-001's recorded control number was optimiser truncation. That is **appended to H-001,
+> never edited into it**, and reported in H-011's result at the top rather than in a
+> caveat — the treatment H-003 §K required of the cost comparison, for the same reason.
+>
+> **VOID condition.** If the cap is reached without the gradient tolerance being met at any
+> rung the primary statements are evaluated at, the run is **VOID, not negative**. A fit
+> that did not converge cannot support "capacity is not the constraint".
+
+**The primary rung is designated in advance: C-3**
+
+> All six rungs are run and the full profile is reported. **Only C-3 supplies the verdict.**
+>
+> C-3 rather than C-5 for a reason available before the run: degree 3 is the lowest degree
+> at which a three-way interaction among three features exists at all. C-2 can represent
+> every pairwise interaction; only C-3 and above can represent `x₁·x₂·x₃`. C-3 is therefore
+> the smallest rung that can express *every* interaction among the registered features,
+> which makes it the smallest rung whose null result is informative.
+>
+> **Rung shopping is structurally unavailable, not merely discouraged.** If C-3 lands in
+> the did-not-move band and a higher rung is materially positive, that is a **new
+> hypothesis with a fresh draw against `N_claims`**, not a result of H-011. The profile is
+> reported in full so the reader sees the higher rung; H-011's verdict does not move.
+
+---
+
+**Three pre-committed statements. Three metrics. Three thresholds.**
+
+> **This is the correction H-009 §J earned.** H-009 registered sign and attribution and
+> registered nothing about magnitude, then the verdict turned on magnitude: `+0.024157`
+> was a real, significant, mechanistically-predicted effect that failed a threshold set for
+> a different purpose. Its own verdict block records the defect — "'Does the feature layer
+> work' and 'does it reach BSS 0.05' were bound together as one question when they are
+> two."
+>
+> Below, each question has its own metric, its own number, and its own outcome. They can
+> disagree, and the joint table says what it means when they do. **No single threshold can
+> decide more than one of them.**
+
+**Statement 1 — MAGNITUDE. Did it move enough to matter?**
+
+> - **Metric:** `ΔBSS = BSS(C-3) − BSS(C-0)`, out-of-sample pooled, both under the primary
+>   convergence path.
+> - **Material threshold:** `ΔBSS ≥ +0.010`.
+> - **Did-not-move band:** `|ΔBSS| < max(0.002, the C-3 K-1 null's largest absolute
+>   excursion as measured by H-010)`. The rule is fixed here; the number is fixed by a gate
+>   that runs first, so it is not shoppable in either direction.
+> - **Middle zone:** everything between.
+>
+> **Why +0.010, and why a difference rather than a level.** The question is the attribution
+> of a *change*, so the threshold is on the change. Requiring the change alone to clear
+> K-3's 0.05 trading-materiality floor would repeat H-009 §J's defect with the inequality
+> pointing the other way. Four anchors, stated so a reader can substitute their own:
+> 1. ~13× the largest single-seed excursion of the K-1 null at 4 parameters (+0.000757), so
+>    it cannot be produced by the noise floor the gate measured.
+> 2. 20% of `K-3`'s 0.05 — the project's own registered floor for a BSS that means anything.
+> 3. Against C-0 at −0.006766 it means the larger combiner does not merely recover the
+>    four-parameter deficit but **crosses zero into positive skill**.
+> 4. ~41% of `+0.024157` — the only real effect this feature set has been shown to carry,
+>    measured by H-009 with the *same* features and the *same* four parameters.
+
+**Statement 2 — SIGN. Is the move distinguishable from zero?**
+
+> - **Metric:** per-decision Brier improvement
+>   `bᵢ = (f_{C-0,i} − oᵢ)² − (f_{C-3,i} − oᵢ)²`, positive when the larger combiner is
+>   better. Paired by construction: identical decisions, folds, labels, rows and order —
+>   capacity is the only difference. The H-003/H-007 paired design in probability space,
+>   and the same statistic H-009 §E used.
+> - **Test:** stationary bootstrap of `mean(b)`, block 10, sensitivity reported at 1 and 25,
+>   10,000 resamples, seed 1337. One-sided `H₁: mean(b) > 0`.
+> - **Threshold:** `p ≤ 0.01` — the Benjamini–Hochberg rank-1 critical value at
+>   `N_claims = 5`. See §9 below, including the step-up route to 0.03 that is refused in
+>   advance.
+> - **Block sensitivity is reported and is not permitted to be silent.** H-009's §9
+>   consequence turned on the fourth decimal at block 25 and its entry says so. If the
+>   verdict here differs across blocks 1, 10 and 25, the result states that it does and
+>   reads as holding at the registered block only.
+
+**Statement 3 — ATTRIBUTION. Is the move discrimination, or is it calibration?**
+
+> - **Metric:** Murphy decomposition, `EVALUATION.md` §3.4, `BS = Reliability − Resolution
+>   + Uncertainty`. Uncertainty is a property of the labels alone and is identical across
+>   rungs, so `ΔBS = ΔReliability − ΔResolution`.
+>   **Resolution share** `= ΔRes / (ΔRes − ΔRel)`, the resolution gain as a fraction of the
+>   total Brier improvement.
+> - **Threshold:** resolution share **≥ 0.50**.
+> - **Binning, registered before the run:** 10 equal-width bins of forecast probability on
+>   [0, 1]. The equal-count (decile) version of `EVALUATION.md` §3.3 is reported as a
+>   sensitivity, not as the primary.
+>
+> **Why this is a separate question and not a refinement of the other two.** A larger
+> combiner can improve Brier score by fitting the *base rate* more sharply while
+> discriminating no better — §3.4: "Low resolution means there is no signal, and no amount
+> of calibration will create one." That is the H-007 finding restated in probability space:
+> the signal arm's 56.2% long was the base rate, and the entire difference was attributable
+> to it. **A capacity gain that is all reliability is the same confound wearing different
+> clothes, and it must not be able to pass this hypothesis.**
+
+**Registered prediction — reported, explicitly not a pass condition**
+
+> In H-009 §G's pattern, so it can be scored rather than recalled:
+>
+> **Predicted: `ΔBSS` at C-3 lands in the did-not-move band, and capacity is excluded.**
+> Grounds: H-009 measured the same four parameters on the same features extracting
+> `+0.024157` at `p = 0.0150` on a different label. A hypothesis class that found real
+> structure when it was there is unlikely to be the thing hiding structure when it is not.
+>
+> **This prediction has no bearing on the verdict**, which is decided only by the three
+> statements above. It is recorded so that a confirmation is worth something and a
+> refutation is visible — and because a registration whose author expects a null result is
+> the registration most at risk of an under-powered instrument passing unexamined. That
+> risk is what the convergence guardrail and H-010 are for.
+
+---
+
+**The joint reading — pre-committed, so no combination has to be interpreted afterwards**
+
+> | magnitude | sign | attribution | reading | action |
+> |---|---|---|---|---|
+> | ≥ +0.010 | `p ≤ 0.01` | share ≥ 0.50 | **Capacity was the binding constraint.** | **ACCEPTED.** Slice 1 as proposed is withdrawn — it is the wrong question. Register the capacity question properly instead. |
+> | ≥ +0.010 | `p ≤ 0.01` | share < 0.50 | Capacity bought **calibration, not discrimination**. | **REJECTED.** The premise of slice 1 is unsupported; nothing here says the features carry direction. Report the reliability gain as the finding it is. |
+> | ≥ +0.010 | `p > 0.01` | any | A material point estimate the data cannot distinguish from zero. | **REJECTED**, per template §3: AMBIGUOUS defaults to REJECT. Report ΔBSS and its CI; do not describe it as a trend. |
+> | 0.002 … 0.010 | `p ≤ 0.01` | any | Capacity is a **contributing but non-binding** constraint. | **REJECTED** as a claim. Slice 1 proceeds, and every result it produces is reported **net of a capacity term of the measured size**, stated in the result. |
+> | did-not-move band | any | any | **Capacity is excluded over the range tested.** | **REJECTED.** Explanation B is removed from §6's list. Slice 1 becomes interpretable and is registered next. |
+> | `ΔBSS ≤ −0.002` | — | — | The larger combiner is **worse out-of-sample**: variance, not absence of signal. | **REJECTED**, and the reading is stated as variance. An unregularised 20-parameter fit degrading is what overfitting looks like; it is **not** evidence that the features are empty and must not be reported as if it were. |
+
+**§9 — `N_claims` and the critical value, stated before the run**
+
+> Registering this claim moves `N_claims` from **4 to 5** (H-003, H-004, H-007, H-009,
+> H-011). Under `EVALUATION.md` §9, Benjamini–Hochberg at α = 0.05:
+>
+> | rank k | critical `0.05 × k/5` |
+> |---|---|
+> | **1** | **0.0100** |
+> | 2 | 0.0200 |
+> | 3 | 0.0300 |
+> | 4 | 0.0400 |
+> | 5 | 0.0500 |
+>
+> **What registering this costs, before it runs — computed, not asserted.** At `m = 4` the
+> family currently rejects at `k = 2`: H-009 at `0.0150` and H-003 at `0.0204 ≤ 0.025`. At
+> `m = 5` with H-011 unrun, the available `p` are `0.0150`, `0.0204`, `0.5041`; rank 1 needs
+> `≤ 0.0100`, rank 2 needs `≤ 0.0200`, rank 3 needs `≤ 0.0300`, and **none holds.**
+> **Registering H-011 removes the family's current rejection.** H-003 loses the §9 clearance
+> it gained hours ago and H-009 loses its own — at the moment of registration, before any
+> data is touched.
+>
+> That cost is accepted and is recorded here rather than discovered later. It is also
+> largely nominal: H-009 was rejected on its primary threshold, not on §9, and H-003's
+> directional reading was withdrawn on H-007's substantive grounds. Neither depends on the
+> clearance being lost. **This is the third time the registry has visibly weakened an
+> existing result by asking a new question, and it is the mechanism working.**
+>
+> **The step-up route that is refused in advance.** With `0.0150` and `0.0204` in the
+> family, the arithmetic admits H-011 at any `p ≤ 0.03`: for `p* ≤ 0.0300` the sorted first
+> three are within `{0.0150, 0.0204, p*}` and `p₍₃₎ ≤ 0.0300`, so `k = 3` and all three are
+> rejected. **H-011 will not be reported as clearing §9 by that route.** Being carried over
+> the line by the p-values of a claim rejected on magnitude and a claim whose reading is
+> withdrawn is not a correction doing its job. **The registered threshold is `p ≤ 0.01`**,
+> written here, before the run, so that a `p` of 0.02 cannot afterwards be presented as
+> clearing.
+>
+> **The symmetric consequence, also pre-committed.** If H-011 returns `p ≤ 0.03`, the
+> step-up rejects H-003 and H-009 alongside it and both clear §9 again. **That restores
+> nothing.** H-003's reading was withdrawn on a confound; H-009 was rejected on a
+> magnitude threshold. A correction they pass later cannot answer either. This is recorded
+> now so it cannot be discovered later — as H-009 §D recorded the same thing about H-003
+> and was proved right.
+
+**Guardrails**
+
+> | | |
+> |---|---|
+> | K-1 | via H-010, at the rung used, against the null measured at that rung. |
+> | K-6 | 1,364 ≥ 150, cleared 9.1×. Label-free, so known now. |
+> | convergence | gradient ∞-norm ≤ `1e-6` per fold per rung, else **VOID**. |
+> | external reference | IRLS agreement to `1e-6` on the fixed fixture, per H-010 and `EVALUATION.md` §14. |
+> | C-0 identity | C-0 under the frozen path must reproduce H-001's `−0.006766` exactly. If it does not, the expansion is defective and the run is VOID before any rung is read. |
+> | rung selection | none. C-3 is designated above and the verdict does not move. |
+
+**Sample size expected**
+
+> 1,364 pooled decisions, 272–273 per fold. Identical in every arm by construction.
+
+**Required scope, registered before it is built**
+
+> As H-003 §I did, so the build cannot quietly become the hypothesis:
+>
+> 1. Deterministic polynomial basis expansion — pure, label-free, pointwise. **It ships with
+>    `tests/features/test_polynomial_expansion.py` asserting truncated-history equality.**
+>    A pointwise transform of same-row features cannot leak across time; "cannot" is the
+>    word every defect in `EVALUATION.md` §14 was fluent about, so the test is written
+>    anyway. Hard Rule 1 admits no exception.
+> 2. Murphy decomposition in `src/metrics/`, with the identity `BS = Rel − Res + Unc`
+>    asserted to `1e-12`.
+> 3. Convergence instrumentation: the gradient infinity-norm exposed on the fitted object,
+>    plus the convergence-stop fitting rule alongside the frozen one.
+> 4. IRLS reference solver, **test-only**, never imported by `src` — with a guard test
+>    asserting that, in the pattern of
+>    `test_no_rung_has_been_smuggled_into_the_evaluation_path`.
+> 5. **`sensitivity.py` keyed on effective parameter count, not on `logistic.py`'s AST
+>    alone** — the gap H-010 records. Per-rung recorded constants.
+> 6. `scripts/run_h010.py`, `scripts/run_h011.py`.
+> 7. `test_c0_reproduces_h001_exactly`.
+
+**Constants introduced — forced, derived, judgement**
+
+> Thirteen, of which **eight are judgement**. H-003 §L's and H-009 §I's accounting,
+> continued.
+>
+> | constant | value | class |
+> |---|---|---|
+> | BH threshold | `p ≤ 0.01` | **forced** — rank 1 at `m = 5`, α = 0.05, `EVALUATION.md` §9 |
+> | bootstrap block / resamples / seed | 10 / 10,000 / 1337 | **forced** — H-003 §F |
+> | standardisation fit on train only, post-expansion | — | **forced** — the alternative is a registered leak mode |
+> | no regularisation | — | **forced** — §2 rule 4, one change |
+> | did-not-move band | `max(0.002, C-3 null max excursion)` | **derived** — rule registered here, value set by H-010 |
+> | ladder degrees | {1, 2ᴰ, 2, 3, 4, 5} | judgement |
+> | primary rung | C-3 | judgement — reasoned above, still judgement |
+> | material threshold | +0.010 | judgement — four anchors given |
+> | the floor inside the derived band | 0.002 | judgement |
+> | resolution share | ≥ 0.50 | judgement |
+> | decomposition bins | 10, equal-width | judgement |
+> | gradient tolerance | `1e-6` | judgement |
+> | iteration cap | `1e6` | judgement |
+>
+> **If the verdict lands within one band-width of any threshold in either direction, the
+> result names which of the eight it is most sensitive to**, as H-003's result was required
+> to. A verdict that turns on an unmeasured judgement call is a different kind of result
+> from one that does not.
+
+**What a PASS licenses, and what it does not**
+
+> A PASS licenses **registering the capacity question properly** — a larger hypothesis class
+> at fixed features — and withdraws slice 1 as currently scoped.
+>
+> It licenses **nothing about explanations A or C.** It does not say the features carry
+> direction; it says four parameters could not express what three features hold. It does not
+> say `H = 24` is learnable. It does not license a trading claim of any kind: this is a
+> probability-quality hypothesis measured on `EVALUATION.md` §3, no cost model is involved,
+> and no rung of §2's ladder is touched. **The ladder is still halted at rung 2.**
+
+<!-- H-012 onward -->

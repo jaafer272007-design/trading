@@ -31,6 +31,7 @@ import numpy.typing as npt
 from evaluation.pipeline import LeakMode, run_walk_forward
 from evaluation.splits import Fold
 from metrics.brier import Interval, bootstrap_ci
+from models.logistic import LogisticRegression
 
 SHUFFLED_LABEL_SEEDS: Final = tuple(range(30))
 """REPRODUCIBILITY.md §3: shuffled_labels [0..29], enumerated not generated."""
@@ -59,6 +60,25 @@ class ShuffleStudy:
     mean_ci: Interval
     n_decisions: int
     leak: LeakMode
+    fitted_parameters: int = 0
+    """Capacity as fitted. H-010 records the trip/silent set beside it.
+
+    Zero on studies predating H-010, which is honest: they did not measure it.
+    """
+
+    estimator: str = ""
+    """Combiner class actually fitted, for the same reason."""
+
+    converged: bool | None = None
+    """Whether every fold of every seed converged. ``None`` when unreported.
+
+    H-011 makes a non-converged fit VOID rather than negative, and the same
+    reasoning applies to the null: a null measured with an underfit combiner
+    understates what a fitted one would find.
+    """
+
+    worst_gradient_norm: float | None = None
+    """Largest gradient infinity-norm across every fold and seed."""
 
     @property
     def mean_bss(self) -> float:
@@ -142,6 +162,7 @@ def run_shuffled_label_study(
     *,
     seeds: tuple[int, ...] = SHUFFLED_LABEL_SEEDS,
     leak: LeakMode = LeakMode.NONE,
+    model_factory: type[LogisticRegression] = LogisticRegression,
 ) -> ShuffleStudy:
     """Run the deterministic path once per seed under permuted labels.
 
@@ -151,6 +172,9 @@ def run_shuffled_label_study(
         folds: Walk-forward folds.
         seeds: Seeds to sweep. Defaults to the 30 enumerated seeds.
         leak: Deliberate corruption, for negative fixtures.
+        model_factory: Combiner class. H-010 sweeps the leak suite under both
+            registered fitting rules, and the null a gate is judged against is
+            a property of the combiner that measured it.
 
     Returns:
         The :class:`ShuffleStudy`.
@@ -168,12 +192,28 @@ def run_shuffled_label_study(
 
     scores = np.empty(len(seeds), dtype=np.float64)
     n_decisions = 0
+    fitted_parameters = 0
+    estimator = ""
+    all_converged: bool | None = None
+    worst_norm: float | None = None
+
     for i, seed in enumerate(seeds):
         result = run_walk_forward(
-            features, permute_labels(labels, seed), folds, leak=leak
+            features,
+            permute_labels(labels, seed),
+            folds,
+            leak=leak,
+            model_factory=model_factory,
         )
         scores[i] = result.bss
         n_decisions = result.n_decisions
+        fitted_parameters = result.fitted_parameters
+        estimator = result.estimator
+
+        if result.converged is not None:
+            all_converged = result.converged and (all_converged is not False)
+        if result.worst_gradient_norm is not None:
+            worst_norm = max(worst_norm or 0.0, result.worst_gradient_norm)
 
     return ShuffleStudy(
         seeds=tuple(seeds),
@@ -181,4 +221,8 @@ def run_shuffled_label_study(
         mean_ci=bootstrap_ci(scores),
         n_decisions=n_decisions,
         leak=leak,
+        fitted_parameters=fitted_parameters,
+        estimator=estimator,
+        converged=all_converged,
+        worst_gradient_norm=worst_norm,
     )

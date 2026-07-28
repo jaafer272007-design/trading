@@ -163,11 +163,25 @@ re-running the full leak-fixture suite and recording which modes trip. A combine
 without a recorded sensitivity re-measurement invalidates every subsequent K-1 pass.
 
 **Enforcement.** `src/evaluation/sensitivity.py` holds the recorded baseline alongside a
-semantic fingerprint of the combiner module. `tests/evaluation/test_sensitivity.py` fails
-the build when the fingerprint moves without a matching re-measurement — the same pattern
+**capacity signature**: the parameter count as *fitted*, the estimator class as *used*, and
+a semantic fingerprint of the combiner module. `tests/evaluation/test_sensitivity.py` fails
+the build when any component moves without a matching re-measurement — the same pattern
 as the feature-registry guard in `tests/test_causality.py`. The fingerprint is taken over
 the parsed AST with docstrings stripped, so comments and formatting do not trip it but
 any change to logic, hyperparameter defaults, or structure does.
+
+> **Why the fingerprint alone was not enough — recorded 2026-07-28 under H-010.** The
+> fingerprint reads `models/logistic.py`. Capacity can be raised without touching a byte of
+> it: a polynomial expansion of the same three features fits 20 parameters at degree 3, and
+> `run_walk_forward`'s `model_factory` argument accepts a substituted estimator. Under
+> either route the fingerprint held still while `RECORDED_PARAMETER_COUNT` went on declaring
+> 4. **A guard against one route to a change is not a guard against the change.** The first
+> two components of the signature are therefore *measured* by running the pipeline rather
+> than read from source, and `EVALUATION.md` §14's adversarial fixture is supplied for both
+> blind routes — each raising capacity through its route, requiring the guard to fire, and
+> asserting in the same test that the AST fingerprint does not move. That last assertion is
+> what makes the fixture a demonstration of the blindness rather than a restatement of the
+> guard.
 
 **Recorded baseline** — 30 seeds, 834 pooled decisions, 30,000 synthetic bars, combiner
 at **4 parameters** (3 features + intercept):
