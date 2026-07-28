@@ -29,7 +29,7 @@ import pytest
 
 import backtest.direction as direction_module
 from backtest.costs import POINT_VALUE_PER_LOT, CostModel, spread_multipliers
-from backtest.direction import DirectionSource
+from backtest.direction import AlwaysLong, DirectionSource
 from backtest.engine import ArmResult, run_arm
 from backtest.execution import (
     BarArrays,
@@ -63,29 +63,6 @@ RUNG3_RISK = RiskModel(
     max_hold_bars=HORIZON,
     risk_per_trade_currency=RISK,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class AlwaysLong:
-    """§2 rung 2. Gold has a secular uptrend; any long-biased system looks clever."""
-
-    name: str = "rung2_always_long"
-    decision_method: str = "always_long"
-
-    def directions(
-        self, frame: pd.DataFrame, decisions: npt.NDArray[np.int64]
-    ) -> tuple[Direction, ...]:
-        """Long, every time.
-
-        Args:
-            frame: Unused.
-            decisions: Decision positions.
-
-        Returns:
-            One direction per decision.
-        """
-        del frame
-        return tuple([Direction.LONG] * len(decisions))
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,4 +246,14 @@ def test_no_rung_has_been_smuggled_into_the_evaluation_path() -> None:
         if isinstance(obj, type)
         and getattr(obj, "__module__", "") == direction_module.__name__
     }
-    assert defined == {"DirectionSource", "LogisticDirection", "RandomDirection"}
+    assert defined == {
+        "DirectionSource",
+        "LogisticDirection",
+        "RandomDirection",
+        # Rung 2, admitted 2026-07-28 when H-007 registered it. This test
+        # refused it before that, which is the whole point of the test: the
+        # failure message was the registration conversation, and the
+        # registration happened. Rungs 3 and 4 are still unregistered and are
+        # still built from this module.
+        "AlwaysLong",
+    }
