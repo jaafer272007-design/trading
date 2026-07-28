@@ -11,22 +11,22 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 11
+Registered (registry completeness) ... 12
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
   ├─ Rejected ....................... 3   H-007 (rung 2, 2026-07-28)
   │                                       H-009 (volatility, 2026-07-28)
   │                                       H-010 (capacity gate, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 5
+  └─ In flight ...................... 6
 
-N_claims (multiple-testing denom.) ... N = 5
+N_claims (multiple-testing denom.) ... N = 6
   ├─ gates  (not counted) ........... 6   H-001, H-002, H-005, H-006, H-008, H-010
-  └─ claims (counted) ............... 5   H-003, H-004, H-007, H-009, H-011
+  └─ claims (counted) ............... 6   H-003, H-004, H-007, H-009, H-011, H-012
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
-BH rank-1 critical value ............ 0.05 × 1/5 = 0.0100
+BH rank-1 critical value ............ 0.05 × 1/6 = 0.00833
 ```
 
 > **Note on H-003, 2026-07-28 — why it is marked "see note".** Registering H-007 moved
@@ -3155,4 +3155,246 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 > combiner at once — the confound H-011 existed to remove is still there, unremoved, and
 > now known to be unremovable cheaply.
 
-<!-- H-012 onward -->
+---
+
+### H-012 — Does any deterministic feature set carry directional information at this horizon?
+
+- **Registered:** 2026-07-28 UTC
+- **Class:** **claim** — counts toward `N_claims`, taking it **5 → 6**
+- **Status:** REGISTERED
+
+**Claim**
+
+> A ten-feature deterministic design — the three registered features plus seven added on
+> stated priors — extracts out-of-sample pooled `BSS >= +0.010` on the direction label, with
+> the per-decision Brier improvement over the three-feature baseline positive at one-sided
+> `p <= 0.00833`, at at least one of the registered horizons, and the improvement is not
+> attributable to long bias.
+
+**One claim, not seven**
+
+> The seven features are seven **priors**, not seven questions. Registering them
+> individually would take `N_claims` to 12 and the rank-1 critical value to `0.00417`,
+> inflating the denominator with tests that are not independent questions. They enter as one
+> claim with a **mandatory ablation** — which is what keeps the denominator honest without
+> pretending the ablation arms are free. The ablation is a decomposition of one result, not a
+> family of results, and no ablation arm may be reported as a claim in its own right.
+
+---
+
+#### §A. The four no-conditions, registered before any feature was named
+
+> Written before the feature set so the criteria could not be shaped around the candidates.
+> **I conclude the answer is no if all four hold.**
+>
+> | # | condition | threshold |
+> |---|---|---|
+> | i | **Magnitude.** Out-of-sample pooled BSS on true labels does not clear the floor | `BSS < +0.010` |
+> | ii | **Sign.** Per-decision Brier improvement over the three-feature baseline is not distinguishable from zero | `p > 0.00833`, one-sided |
+> | iii | **Horizon.** It fails at every registered horizon | at `H = 4`, `24` and `120` |
+> | iv | **Attribution.** Nothing that clears (i) and (ii) survives the always-long comparison | see §E |
+>
+> **Why `+0.010`:** one fifth of K-3's `0.05` floor, the same materiality anchor H-001's ε
+> uses, and an order of magnitude above the largest single-seed excursion of the K-1 null.
+>
+> **What does not count as "no":** a null at one horizon only; a null with a non-converged
+> fit; a null where the capability test has not passed. Those are non-results. H-010 is the
+> reason that distinction is now explicit rather than assumed.
+>
+> **What this cannot claim either way:** whether a larger combiner would have found more.
+> H-011 is abandoned and capacity is untested. That stays true whatever this returns.
+
+#### §B. The feature set — seven priors, stated before any number
+
+> **Constraint honoured: nothing session-relative**, while R-001 is open. Every feature is a
+> pure function of OHLCV and tick volume over a backward window. None reads a session
+> boundary, a time of day, or anything derived from the era calendar. `session_relative`
+> is `False` on all seven and `tests/test_causality.py` asserts it.
+>
+> Two pairs are deliberately included together. A set containing momentum but not reversal
+> is a bet on which of two documented and opposite effects dominates; including both makes
+> it empirical.
+>
+> | # | feature | captures | prior — why it might carry direction |
+> |---|---|---|---|
+> | 1 | `log_return_120` | momentum, weekly | Time-series momentum is the most replicated directional effect in commodities and FX. `log_return_24` tests one scale; if trend persistence exists here its natural scale is days-to-weeks. |
+> | 2 | `log_return_480` | momentum, monthly | Same prior, longer. Two scales test whether the *horizon of the predictor* matters, which one scale cannot. |
+> | 3 | `vol_scaled_return_120` | momentum per unit risk | `log_return_120 / realized_vol_120`. Standard in managed-futures construction. Not redundant with 1: it **re-ranks** past moves rather than rescaling them, so a large move in a calm regime outranks a larger move in a violent one. |
+> | 4 | `reversal_4` | short-horizon overreaction | The opposite prior to 1-3, at a shorter scale: liquidity provision after a sharp move. Documented intraday-to-daily in many markets. Included so the set is not a one-sided bet on persistence. |
+> | 5 | `atr_distance_480` | trend state | `(close - SMA(480)) / ATR(14)`. The classic trend-following state variable. Unlike `range_position_48`, which is bounded and local, this is unbounded and slow: it distinguishes "far above a slow anchor" from "high within a recent range". |
+> | 6 | `drawdown_from_max_480` | proximity to highs | Gold's behaviour near multi-week highs plausibly differs from mid-range behaviour — breakout dynamics, and the asymmetry commodity trend-following exploits. Bounded in `[0, 1]`, so it cannot act as a scale proxy. |
+> | 7 | `volume_weighted_return_24` | participation-confirmed move | Return per unit of tick volume. Prior: a move on thin participation is more likely to revert, on heavy participation to continue. **See §D — this one carries a pre-committed discount.** |
+>
+> Ten features, **eleven parameters**. Every feature ships with its causal test per Hard
+> Rule 1 and is added to `FEATURE_REGISTRY`, which `tests/test_causality.py` guards against
+> the filesystem.
+
+#### §C. `H = 120` cannot support the sign-stability check — and what that forbids
+
+> Measured before registration (`scripts/report_horizon_geometry.py`, merged `ef14b39`):
+>
+> | | H = 4 | H = 24 | H = 120 |
+> |---|---:|---:|---:|
+> | decisions/fold | 1,635 | 273 / 272 | **55 / 54** |
+> | pooled | 8,175 | 1,364 | **274** |
+> | pooled vs K-6 | 54.5x | 9.1x | **1.8x** |
+> | smallest fold vs K-6 | 10.90x | 1.81x | **0.36x** |
+>
+> **At `H = 120` every one of the five folds is below K-6.** Not one marginal fold — all
+> five, at 54-55 against a floor of 150. Per-fold results are **not reportable** there and
+> the horizon is **pooled-only**.
+>
+> **This is not a footnote, and here is the specific thing it costs.** The per-fold
+> sign-stability check is the diagnostic that caught H-003's reversal in fold 3, and it is
+> how "two opposite regimes cancelling" was distinguished from "a small stable effect". A
+> pooled number at `H = 120` **cannot make that distinction.** The two are observationally
+> identical at that horizon with this geometry, and no amount of care in reading the pooled
+> figure recovers the difference.
+>
+> **Pre-committed, before the run — what a positive result at `H = 120` alone would license:**
+>
+> - It would license **exactly one thing**: registering a new hypothesis to test the same
+>   effect at a geometry that can support per-fold reporting, which means either more data
+>   or a different fold count, and which is a new ID and a fresh `N_claims` draw.
+> - It would **not** license a directional claim. Not a weak one, not a provisional one, not
+>   one with a caveat attached. An effect whose stability cannot be examined has not been
+>   shown to be an effect.
+> - It would **not** be reported as "H-012 cleared at `H = 120`". It would be reported as
+>   "H-012 returned a pooled figure at `H = 120` that no available diagnostic can
+>   distinguish from two cancelling regimes."
+> - It would **not** satisfy no-condition (iii). A single-horizon positive at the one horizon
+>   whose per-fold structure is invisible is the weakest possible evidence in this design,
+>   and it is being pre-committed as such now rather than argued about later.
+>
+> `H = 120` is run anyway. A horizon that cannot support the protocol is a finding to
+> register, not a reason to drop it silently — and dropping it after seeing the other two
+> would be selection on the result.
+
+#### §D. `volume_weighted_return_24` — the pre-committed discount
+
+> Tick volume is **broker-specific**. It counts price updates on FxPro's feed, not
+> contracts traded, and a different broker's tick count for the same hour can differ by an
+> order of magnitude. The feature is included because its prior is real; the discount is
+> registered now, before the run, so it cannot be softened if this is the feature that fires.
+>
+> **Pre-committed: if `volume_weighted_return_24` alone carries the effect** — meaning the
+> ablation shows it contributing the majority of a clearing result, with the other six
+> contributing deltas indistinguishable from zero —
+>
+> - **that is a finding requiring a second feed before it is believed, not a result.** It
+>   would be reported in those words.
+> - It does **not** clear no-condition (i) or (ii) for the purposes of this hypothesis. A
+>   result resting on a broker-specific quantity is not evidence about gold; it is evidence
+>   about FxPro's tick generator until a second feed says otherwise.
+> - The required next step would be a **second feed**, not a larger sweep on this one, and
+>   that step is registered here so it cannot be replaced with something cheaper later.
+> - `RESEARCH.md`'s evidence hierarchy applies: a measurement that cannot be reproduced on
+>   an independent instrument is the weakest tier that still counts as a measurement.
+>
+> This clause exists because the temptation to soften it would be strongest exactly when it
+> binds.
+
+#### §E. Attribution — always-long, on anything that clears
+
+> H-007 is the standing lesson: an effect that is long bias is not directional information.
+> Any configuration clearing (i) and (ii) is re-run against the always-long control on the
+> same decisions, and the long-share of the signal arm is reported beside the base rate.
+> **An effect that always-long matches is withdrawn, not caveated.**
+
+#### §F. The ablation is mandatory
+
+> `EVALUATION.md` §7. Each of the seven features is added **individually** to the
+> three-feature baseline — seven ablation arms plus the baseline plus the full ten — and the
+> delta is reported with its CI.
+>
+> **Why it is mandatory rather than informative.** Widening the feature set from three to ten
+> necessarily takes the combiner from four parameters to eleven. **That is a capacity
+> change, and it cannot be avoided** — it is the confound H-011 existed to remove, still
+> unremoved and now known to be expensive to remove. Without the ablation, a positive result
+> is uninterpretable in exactly the way H-003's was: the effect of *the feature* would be
+> inseparable from the effect of *the parameter*.
+>
+> No ablation arm is a claim. The ablation decomposes one result; it does not generate seven.
+
+#### §G. K-1 at eleven parameters
+
+> The capacity signature added under H-010 keys on the **fitted** parameter count, so moving
+> from 4 to 11 fires the guard automatically. The re-measurement is forced, not remembered.
+>
+> H-010 already measured the null either side of 11: `-0.001754` at 7 parameters and
+> `-0.001850` at 10, both silent, both tripping `{label_in_features,
+> target_encoding_on_all}`. Eleven sits just past a measured point rather than in unknown
+> territory. The re-measurement is still required and its result is reported whatever it is.
+
+#### §H. Standing limitation of the geometry — not of this slice
+
+> **The `2015-09-11` session era never appears in any test window, at any horizon.**
+> Measured: in-window composition is `2015-09-11` 12,250 bars, `2017-10-07` 30,945,
+> `2022-10-21` 22,200. `first_test_start` is bar 32,697, and the first era ends at 12,250 —
+> so **18.7% of the in-window series has never been evaluated out-of-sample, and never can
+> be under this split rule.** It is training data only.
+>
+> Test windows contain two eras, in the same proportion at every horizon: fold 0 entirely
+> `2017-10-07`, fold 1 straddling ~60/40, folds 2-4 entirely `2022-10-21`.
+>
+> **This is a property of the geometry H-001 registered, not of this hypothesis.** It bounds
+> every claim this project has made or will make under this split, and it is recorded here
+> because this is where a later reader meets it.
+>
+> **R-001 consequence, found while measuring this.** R-001 is open against the era
+> boundaries, which have never been checked against FxPro's own announcements. The exposure
+> is narrower than it looks: since only one era boundary falls inside any test window, an
+> error in the era derivation would affect **fold 1's composition alone**, not the whole
+> test set. Folds 0 and 2-4 are single-era at every horizon and are unaffected by where the
+> boundary is drawn. That is a smaller exposure than would have been assumed, and it is
+> worth knowing before a result rather than after.
+
+#### §I. Fixed constants, all registered here
+
+> | constant | value | class |
+> |---|---|---|
+> | horizons | `{4, 24, 120}` | judgement — fixed before the run |
+> | BSS floor | `+0.010` | judgement — one fifth of K-3 |
+> | BH threshold | `p <= 0.00833` | **forced** — rank 1 at `m = 6`, α = 0.05 |
+> | bootstrap block / resamples / seed | 10 / 10,000 / 1337 | **forced** — H-003 §F |
+> | `FIRST_TEST_FRACTION`, folds | 0.50, 5 | **forced** — H-001, unchanged |
+> | fitting rule | frozen 1,000 iterations | **forced** — H-010 measured the convergent rule unaffordable |
+> | feature windows | 120, 480, 4, 480, 480, 24 | judgement — set by the priors in §B |
+
+#### §J. `N_claims` and the critical value, computed before the run
+
+> `N_claims` **5 → 6**: H-003, H-004, H-007, H-009, H-011, H-012.
+>
+> | rank k | critical `0.05 × k/6` |
+> |---|---|
+> | **1** | **0.00833** |
+> | 2 | 0.01667 |
+> | 3 | 0.02500 |
+> | 4 | 0.03333 |
+> | 5 | 0.04167 |
+> | 6 | 0.05000 |
+>
+> **What registering this costs the family — computed, not assumed.** Available `p` are
+> `0.0150` (H-009), `0.0204` (H-003), `0.5041` (H-007). At `m = 6` the step-up finds
+> `k = 2`: `0.0204 <= 0.025`. **Both continue to clear §9.** Unlike H-011's registration,
+> this one costs the family nothing. Stated because the last two registrations both cost
+> something and the pattern should not be assumed either way.
+>
+> **The step-up route is refused in advance**, as in H-011. With H-009 and H-003 in the
+> family the arithmetic would admit a larger `p` for H-012; being carried over the line by a
+> claim rejected on magnitude and a claim whose reading is withdrawn is not a correction
+> doing its job. **The registered threshold is `p <= 0.00833`.**
+
+#### §K. Pre-committed interpretation
+
+> - **PASS** (all four no-conditions fail to hold): report which of the four cleared and
+>   which did not, individually. Register the follow-up as a new hypothesis. No trading
+>   claim: this is `EVALUATION.md` §3 probability quality, no cost model, and the §2 ladder
+>   is untouched and still halted at rung 2.
+> - **FAIL** (all four hold): **the answer is no for this feature set at these horizons.**
+>   Record it. Do not widen the set and re-run — that is a new ID and a fresh draw.
+> - **AMBIGUOUS:** default REJECT, per §3 of the template.
+> - **VOID:** if the capability test fails, or a fit does not converge, or K-1 does not
+>   clear at 11 parameters. A non-result is not a negative result.
+
+<!-- H-013 onward -->
