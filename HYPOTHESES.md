@@ -12,10 +12,11 @@
 
 ```
 Registered (registry completeness) ... 6
-  ├─ Accepted ....................... 1   H-001 (K-1 does not trip, 2026-07-27)
+  ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
+  │                                       H-003 (K-4, 2026-07-28)
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 4
+  └─ In flight ...................... 3
 
 N_claims (multiple-testing denom.) ... N = 2
   ├─ gates  (not counted) ........... 4   H-001, H-002, H-005, H-006
@@ -503,8 +504,9 @@ phase.
   engine exists (see §2 rule 1)
 - **Cost constants amended:** 2026-07-28 — still before any run, after the engine was
   built to §I and introduced constants the specification could not have named (§J–§N)
+- **Executed:** 2026-07-28 on real market data
 - **Class:** claim — counts toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** ACCEPTED — K-4 does not trip
 
 **Claim**
 > A single-agent deterministic baseline will beat random entry with identical risk
@@ -900,6 +902,145 @@ risk management" actually are**
 >   wrong. Return to feature research.
 > - AMBIGUOUS (the one-sided bootstrap CI straddles zero): **REJECT.** §3's default, and
 >   the default is not overridden by a favourable point estimate.
+
+--- RUN ---
+
+- **Run manifest:** `runs/13ae20a1-76b6-402e-b256-3e4f7dad14bd.json`
+  sha256 `53cde12e6b0fe3bf13e24270d1f0978e4bec03836922c5099234e467ca5ebed5`
+- **run_id:** `13ae20a1-76b6-402e-b256-3e4f7dad14bd`
+- **Executed:** 2026-07-28, commit `33ca731`, `git_dirty: false`
+- **Registration precedes the run:** §A–§I committed `a617a29` (merged `293c150`),
+  §J–§N committed `574677f` (merged `cf3fb28`). Both predate the run commit.
+- **Data:** derived snapshot
+  `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`,
+  1,364 decisions, K-6 cleared at 9.1x.
+- **Cost model:** `ff16183e7684e0fc…`, H-005 deviation notice carried in the manifest.
+- **Verdict:** **ACCEPTED — K-4 does not trip.**
+
+**The primary test**
+
+> | block | mean difference (R) | 95% CI | one-sided p |
+> |---|---|---|---|
+> | **10 (registered)** | **+0.060398** | **[+0.005120, +0.117878]** | **0.0204** |
+> | 1 (sensitivity) | +0.060398 | [+0.008934, +0.111278] | 0.0109 |
+> | 25 (sensitivity) | +0.060398 | [−0.001503, +0.122639] | 0.0288 |
+>
+> Signal expectancy −0.096292 R, control mean −0.156689 R over 30 seeds
+> (min −0.204602, max −0.099200). **Zero of thirty control arms did as well as the
+> signal.** Stationary bootstrap, 10,000 resamples, seed 1337.
+>
+> **At block 25 the two-sided 95% interval includes zero.** The one-sided p still
+> clears 0.05, and the two are consistent — a one-sided p just under 0.05 corresponds
+> to a two-sided interval that barely touches zero — but the verdict rests on the
+> registered block and that is worth stating rather than reporting only the three
+> p-values.
+
+**§9 multiple-testing correction — the number this turns on**
+
+> Benjamini–Hochberg across `N_claims = 2` puts the critical value for the most
+> significant claim at `0.05 x 1/2 = 0.025`.
+>
+> - block 10 (registered): **p = 0.0204 ≤ 0.025 — survives**, by 0.0046.
+> - block 1: p = 0.0109 — survives.
+> - block 25: p = 0.0288 **> 0.025 — would not survive**.
+>
+> The result clears §9 at the registered block length and would not clear it at the
+> upper end of its own registered sensitivity range. That is the single tightest
+> margin in this run and it is recorded as such.
+
+**Per fold, alongside pooled**
+
+> | fold | n | signal R | control R | difference R | test era |
+> |---|---|---|---|---|---|
+> | 0 | 273 | +0.008234 | −0.200376 | **+0.208609** | 2017-10-07 |
+> | 1 | 273 | −0.113504 | −0.221234 | +0.107730 | straddles |
+> | 2 | 273 | −0.144524 | −0.204437 | +0.059913 | 2022-10-21 |
+> | 3 | 273 | −0.195886 | −0.102641 | **−0.093245** | 2022-10-21 |
+> | 4 | 272 | −0.035555 | −0.054385 | +0.018830 | 2022-10-21 |
+> | pooled | 1,364 | −0.096292 | −0.156689 | +0.060398 | — |
+>
+> **The effect is not uniform and one fold reverses it.** It is largest in fold 0,
+> declines monotonically through fold 3, and fold 3 is negative. Folds 2, 3 and 4 test
+> entirely inside the 2022-10-21 era on training pools that are majority pre-2022 —
+> the condition H-006's era term exists to make visible, and it is now visible in a
+> result rather than only in the geometry.
+
+**Realised cost per arm, per decision, in R**
+
+> | component | signal | control | divergence |
+> |---|---|---|---|
+> | spread | 0.101342 | 0.101334 | 0.000008 |
+> | slippage | 0.021793 | 0.021793 | 0.000000 |
+> | latency | 0.005059 | 0.005163 | 0.000104 |
+> | commission | 0.001121 | 0.001121 | 0.000000 (identical by construction) |
+> | swap | 0.000738 | 0.000672 | 0.000067 |
+> | gap-through | 0.002719 | 0.002622 | (diagnostic, already inside gross) |
+> | **total** | **0.130053** | **0.130082** | **0.000030** |
+>
+> **Cost invariance holds.** Divergence is 0.05% of the measured effect, far inside the
+> registered 10% tolerance, and no identical-by-construction component moved. The
+> floor-insensitivity claim of §E may be made for this run.
+
+**Breakeven spread**
+
+> - **Signal arm, absolute expectancy: there is none.** Expectancy is **−0.006063 R at
+>   a spread floor of zero.** The signal arm does not make money at any cost
+>   assumption, including no costs at all.
+> - **Paired difference: 1,447.3 points**, bracketed to within 3.9 — 19x the registered
+>   75-point floor. Reported although invariance holds, because a number is more useful
+>   than the argument it replaces.
+
+**K-5 — every cost doubled**
+
+> Difference **+0.067853 R**, 95% CI [+0.013624, +0.123120], p = 0.0078. The difference
+> does not disappear; it grows slightly, because doubling the spread moves the
+> executable price and therefore which bar a position exits on. **K-5 does not trip.**
+
+**What this result does not say, stated at the same volume as what it does**
+
+> 1. **The signal arm loses money.** −0.096292 R per decision, and −0.006063 R even at
+>    zero spread. It loses *less* than random entry, which is the entire content of the
+>    claim. Nothing here is a profitability finding.
+> 2. **The leading alternative explanation is long bias, and this run cannot exclude
+>    it.** The signal went long 767 times and short 597 — **56.2% long** against the
+>    control's 50% by construction. Gold has a secular uptrend over this window. That
+>    confound is exactly what `EVALUATION.md` §2 rung 2 isolates, and rung 2 has not
+>    been run. It is not run here: §G deferred rungs 2–4 to their own hypothesis ID
+>    precisely so a confound could not be tested with an unregistered arm inside the run
+>    it threatens.
+> 3. **A negative-BSS model beat random entry directionally.** H-001's unshuffled
+>    control measured BSS −0.006766 for this combiner. There is no contradiction — the
+>    sign of `p − 0.5` can carry information while the probability is badly calibrated —
+>    but the pairing should be read as a caution about the combiner, not as
+>    corroboration.
+> 4. **Tier 2 at best** under `RESEARCH.md` while H-005 is open, and the event model
+>    reaches 2.83% of bars (§M). Every non-payrolls scheduled release is priced at the
+>    flat floor, an optimistic error that K-5 and the breakeven spread bound rather than
+>    remove.
+
+**Judgement-constant sensitivity, since the §9 margin is thin**
+
+> Seven of the nine judgement constants (§L) are cost constants, and this run measures
+> that the verdict does not turn on any of them: total cost divergence between the arms
+> is 0.000030 R against an effect of 0.060398 R, and the difference's breakeven spread
+> is 19x the floor. Errors in slippage, commission, swap or the latency coefficient
+> cannot move it.
+>
+> The two that are not measured by this run:
+>
+> - **The 1.5x ATR stop and target.** Both arms share it, so it does not bias the
+>   comparison — but it fixes the payoff shape of every decision, and the *magnitude* of
+>   the difference is a function of it. This run says nothing about what the difference
+>   would be at 1.0x or 2.5x. It is the one judgement constant the verdict could turn
+>   on, and it is unmeasured.
+> - **The bootstrap block length** is measured across its own registered range and the
+>   verdict holds at 1, 10 and 25 against α = 0.05 — but not against the §9-corrected
+>   0.025 at block 25. See above.
+
+**Pre-committed action taken**
+
+> PASS. **Proceed to `EVALUATION.md` §2 rung 2** — always-long — which is also the test
+> of this result's leading confound. Not to rungs 3–5, and not to the agent panel.
 
 ---
 
