@@ -14,9 +14,10 @@
 Registered (registry completeness) ... 9
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
-  ├─ Rejected ....................... 1   H-007 (rung 2, 2026-07-28)
+  ├─ Rejected ....................... 2   H-007 (rung 2, 2026-07-28)
+  │                                       H-009 (volatility, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 5
+  └─ In flight ...................... 4
 
 N_claims (multiple-testing denom.) ... N = 4
   ├─ gates  (not counted) ........... 5   H-001, H-002, H-005, H-006, H-008
@@ -52,6 +53,20 @@ FDR correction level ................ α = 0.05, Benjamini–Hochberg
 > §9's. A volatility claim clearing a multiple-testing correction is not evidence about
 > direction, and this note exists so the coupling is on the record *before* H-009 runs and
 > cannot be presented afterwards as a rehabilitation. See H-009 §D.
+
+> **It happened. 2026-07-28.** H-009 returned `p = 0.0150`. At `m = 4` the BH step-up finds
+> `k = 2` and **rejects both nulls: H-003 clears `EVALUATION.md` §9 for the first time.**
+>
+> **H-003's directional reading remains withdrawn.** Nothing about H-007's measurement has
+> changed. The clearance is a multiple-testing artefact of a volatility claim entering the
+> family, predicted in writing before it occurred, and it carries no information about
+> direction whatever.
+>
+> It is also **block-sensitive** and must not be quoted without that: H-009's `p` is
+> `0.0008` at block 1, `0.0150` at the registered block 10, and `0.0252` at block 25 — the
+> last of which misses `0.025` and would leave the family rejecting nothing at all. A §9
+> clearance that turns on the fourth decimal place of a nuisance parameter is not a settled
+> clearance.
 
 In flight = status REGISTERED or RUNNING.
 
@@ -2244,5 +2259,129 @@ becomes an explicit term**
 
 > Snapshot `71f9fcf1…`, window `2015-09-11` → `2026-07-26` (H-006). Walk-forward, five
 > folds. **The sealed holdout is not opened and is not involved.**
+
+--- RUN ---
+
+- **Run manifest:** `runs/dc0f40bc-422c-433f-8790-4567a0408843.json`,
+  sha256 `0c2ed357abf70ebe9597922968a0cfca1ceba8fdd0ae8fd8aa79248ff9152f89`
+- **Executed:** 2026-07-28, commit `ea4dc33`, clean tree
+- **Registration commit:** `8e01d7d` — provably before `ea4dc33`, which added the code
+- **Verdict:** **REJECTED**
+
+**Setup as executed**
+
+> 65,395 in-window bars, 12 invalid. Label defined on 59,976; eligible 59,976; **1,333
+> decisions** on the registered grid, K-6 clear at 8.9x. Base rate `0.489872`, **zero ties**.
+>
+> Fold 0 carries 242 decisions against the other folds' 273, and reports `purged = 0` where
+> H-001 reports 24. Checked rather than assumed: the two unexplained 2021-01-21 gaps sit at
+> bars 32404-32405, and the label's 1,024-bar backward span poisons `[32404, 33428]`, which
+> straddles fold 0's `test_start` of 32697. All 24 purge candidates were already ineligible,
+> so **the purge found nothing left to purge** rather than failing to run. `731 / 24 = 30.5`
+> grid points lost, and 31 are missing. The wider backward span makes each invalid bar
+> poison 1,024 bars where a 48-bar feature lookback poisoned 48.
+
+**Gates**
+
+> | gate | result |
+> |---|---|
+> | K-1 on this label, 30 seeds | **PASS** — mean BSS `-0.000834`, CI `[-0.001394, -0.000445]`, median `-0.000435`, max `+0.000479` |
+> | `label_in_features` fixture | TRIPPED, `+0.999984` |
+> | `target_encoding_on_all` fixture | TRIPPED, `+0.241980` |
+> | K-6 | 1,333 vs 150 |
+> | threshold causality + adversarial fixture | enforced in CI, 454 tests green |
+
+**Primary metric**
+
+> | | |
+> |---|---|
+> | **pooled BSS** | **`+0.024157`**, n = 1,333 |
+> | registered threshold | `>= 0.05` — **NOT CLEARED** |
+> | BS model / climatology | `0.243861` / `0.249897` |
+>
+> Per fold: `-0.010530` (n=242), `+0.021558`, `+0.010775`, `+0.024594`, `+0.064928`.
+
+**Significance**
+
+> | block | mean d | 95% CI of mean d | one-sided p | BSS CI |
+> |---|---|---|---|---|
+> | 1 | `+0.006037` | `[+0.002368, +0.009662]` | `0.0008` | `[+0.0095, +0.0387]` |
+> | **10 (registered)** | `+0.006037` | `[+0.000972, +0.011532]` | **`0.0150`** | **`[+0.0039, +0.0461]`** |
+> | 25 | `+0.006037` | `[+0.000455, +0.012077]` | `0.0252` | `[+0.0018, +0.0483]` |
+>
+> **The BSS interval excludes 0.05 from below at all three block lengths.** This is not the
+> AMBIGUOUS branch and not a knife-edge: the threshold is outside the interval, not inside it.
+
+**The registered predictions, scored**
+
+> | prediction | outcome |
+> |---|---|
+> | §G (i) response to `realized_vol_24` positive in every fold | **confirmed 5/5** — `+0.0840, +0.0824, +0.0837, +0.0800, +0.0828` |
+> | §G (ii) `realized_vol_24` accounts for most of the skill | **confirmed** — alone it scores `+0.023485`, **97.2%** of the three-feature BSS |
+> | §E mean(d) > 0 | confirmed, `p = 0.0150` |
+> | §D BH coupling to H-003 | fired exactly as written, see below |
+>
+> The probe reproduced the evaluation path's probabilities bitwise, so the refit is the same
+> model rather than a second implementation asserted to be equivalent.
+
+**Verdict: REJECTED, and the reason the FAIL branch's argument does not survive its own run**
+
+> `BSS +0.024157 < 0.05`. The threshold was registered at K-3's existing materiality floor
+> before the run and it does not move. **H-009 is rejected.**
+>
+> **And the §J FAIL branch is wrong on the facts, which is a defect in this registration and
+> is recorded as one.** §J justified its action with: "if a direct measurement of a
+> persistent quantity cannot forecast that quantity one window ahead, the defect is
+> upstream." The run measured that it **can** forecast it — significantly, through the
+> predicted mechanism, with the predicted feature carrying 97.2% of the effect and the
+> predicted sign in all five folds. Four pre-registered predictions were confirmed. The
+> antecedent of §J's argument is false.
+>
+> **What went wrong in the registration:** it set a binary threshold on a diagnostic whose
+> informative content was not binary, and it registered the *sign* and the *attribution* of
+> the effect while registering nothing about its *magnitude* — and magnitude is what decided
+> the verdict. "Does the feature layer work" and "does it reach BSS 0.05" were bound together
+> as one question when they are two, and no prediction was recorded that would let this run
+> distinguish "the layer is lossy" from "the label is harder than assumed".
+>
+> **The action stands anyway. Slice 1 is not run.** §J's required action was registered
+> before the result and is not being overridden on the basis of the result, which is the
+> whole mechanism this registry exists to enforce. A registration that turns out to have
+> been poorly constructed is corrected by a **new hypothesis**, registered before it runs —
+> never by rereading the old one in the light of what it returned. `RESEARCH.md` §5.2 does
+> not carve out an exception for registrations whose author later disagrees with them.
+>
+> What the project may now assert, and no more: **the feature layer is connected to the
+> label through the registered mechanism, and the effect it carries is below the materiality
+> floor the project set for itself.** Whether that magnitude indicts the feature layer, the
+> four-parameter combiner, or the difficulty of the label is **unresolved, and this run
+> cannot resolve it** because no prediction was registered that would have separated them.
+
+**§9 — the BH consequence, which fired as written**
+
+> `p = 0.0150 <= 0.025`. At `m = 4` the step-up finds `k = 2`: sorted `p` are `0.0150`
+> (H-009) and `0.0204` (H-003), and `0.0204 <= 2/4 x 0.05 = 0.025`. **Benjamini-Hochberg
+> rejects both nulls.** H-003 clears `EVALUATION.md` §9 for the first time in the project's
+> life.
+>
+> **H-003's directional reading is not restored and nothing may present it as restored.**
+> It was withdrawn on H-007's substantive grounds — always-long matched the signal at
+> `p = 0.5041` — not on §9's. This consequence was written into §D and into H-003's own
+> entry *before* this run for exactly this reason.
+>
+> **Reported without softening: the coupling is block-sensitive.** At the registered block
+> `p = 0.0150` and at block 1 `p = 0.0008`, both clearing. At block 25 `p = 0.0252`, which
+> **misses 0.025 by 0.0002** and would leave the family rejecting nothing. A cross-hypothesis
+> consequence that turns on the fourth decimal place of a nuisance parameter is not a robust
+> consequence, and H-003's §9 clearance should be read as holding at the registered block and
+> failing at the stress block rather than as settled.
+
+**Notes**
+
+> - No cost model, no trade, no baseline ladder, no holdout. H-005's deviation does not
+>   apply and no `EVALUATION.md` §10 claim is made. The ladder remains halted at rung 2.
+> - `src/` was not modified for this run — see §A's amendment. `models/logistic.py` is
+>   byte-identical, so K-1's recorded sensitivity baseline still describes this combiner.
+> - Any new idea in this block becomes a **new hypothesis**, not an amendment to this one.
 
 <!-- H-010 onward -->
