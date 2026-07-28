@@ -11,16 +11,16 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 8
+Registered (registry completeness) ... 9
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
   ├─ Rejected ....................... 1   H-007 (rung 2, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 4
+  └─ In flight ...................... 5
 
-N_claims (multiple-testing denom.) ... N = 3
+N_claims (multiple-testing denom.) ... N = 4
   ├─ gates  (not counted) ........... 5   H-001, H-002, H-005, H-006, H-008
-  └─ claims (counted) ............... 3   H-003, H-004, H-007
+  └─ claims (counted) ............... 4   H-003, H-004, H-007, H-009
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
@@ -40,6 +40,18 @@ FDR correction level ................ α = 0.05, Benjamini–Hochberg
 > `Status: ACCEPTED` is left in place on purpose. The run happened and its arithmetic
 > holds; what failed is the inference drawn from it, and the registry records what was
 > done rather than what is currently believed.
+
+> **Second note on H-003, 2026-07-28 — registering H-009 changes §9 again, and could
+> change it in H-003's favour.** `N_claims` moves 3 → 4, so the BH critical values become
+> `0.0125, 0.025, 0.0375, 0.05`. Because BH is step-up, **if H-009 returns `p <= 0.025`
+> the procedure rejects the two smallest `p`-values, which includes H-003 at `0.0204`.**
+> H-003 would then clear `EVALUATION.md` §9 for the first time.
+>
+> That would change nothing about what H-003 means. Its directional reading was withdrawn
+> on H-007's substantive grounds — always-long matched the signal at `p = 0.5041` — not on
+> §9's. A volatility claim clearing a multiple-testing correction is not evidence about
+> direction, and this note exists so the coupling is on the record *before* H-009 runs and
+> cannot be presented afterwards as a rehabilitation. See H-009 §D.
 
 In flight = status REGISTERED or RUNNING.
 
@@ -1892,4 +1904,310 @@ becomes an explicit term**
 >
 > It is not marked `VOID`. Nothing about it was invalidated; its subject was.
 
-<!-- H-009 onward -->
+### H-009 — Does the feature layer forecast *volatility* at H = 24?
+
+- **Registered:** 2026-07-28 13:02 UTC
+- **Class:** claim — counts toward `N_claims`, taking it **3 → 4**
+- **Status:** REGISTERED
+
+**Why this exists, stated first because it determines how a failure is read**
+
+> H-003 and H-007 established that these three features carry no *directional* information
+> at `H = 24`. That leaves two explanations that no directional experiment can separate:
+> the instrument carries no extractable directional signal, or **the feature layer is not
+> measuring anything at all** — a wiring defect in feature computation, alignment, the
+> fold geometry, the eligibility mask, or the label path.
+>
+> Volatility separates them, because volatility is the one quantity on this instrument
+> where the prior is strong enough that a null result is not attributable to the market.
+> Gold volatility clusters; `realized_vol_24` is a direct measurement of that clustering;
+> and forecasting whether volatility will be above its own recent level one window ahead is
+> close to the easiest honest forecasting problem this data supports.
+>
+> This is therefore a **diagnostic with a strong prior**. Its value is asymmetric and that
+> is deliberate: a PASS says little that is new, a FAIL says something large.
+
+**Claim**
+
+> A logistic combination of `log_return_24`, `realized_vol_24` and `range_position_48`,
+> fitted on the H-001 walk-forward geometry, will achieve **BSS ≥ 0.05** out of sample on
+> the volatility label defined in §B, at a one-sided bootstrap `p` clearing the
+> Benjamini–Hochberg threshold computed in §D.
+
+---
+
+#### §A. Change under test
+
+> Exactly one thing changes from H-001's unshuffled control: **the label**. Same three
+> features, same combiner, same folds, same purge and embargo, same snapshot, same window,
+> same standardiser, same eligibility construction.
+>
+> Files added: `src/labels/volatility.py`, `tests/labels/test_volatility.py`,
+> `scripts/run_h009.py`. One accessor added to `src/models/logistic.py`
+> (`coefficients`, read-only, no arithmetic change) so §G can be reported.
+>
+> **No feature is added, changed, or removed.** This is what makes the run cheap: no new
+> causal-test burden under `CLAUDE.md` Hard Rule 1, because no new feature exists.
+
+#### §B. The label — `vol_above_median_24`
+
+> Let `rv = RealizedVol(24)` — the shipped feature, unchanged, causally tested under H-002.
+>
+> ```
+> threshold[T] = median( rv[T-999], ..., rv[T] )          # 1000 values, all <= T
+> label[T]     = 1.0  if  rv[T + 24] > threshold[T]  else  0.0
+> ```
+>
+> **Why `rv[T + 24]` is the forward realised volatility, exactly.** `rv[k]` is the
+> population SD of the one-bar log returns computed from closes `k-24 .. k`. So `rv[T+24]`
+> is the SD of returns from closes `T .. T+24` — the window *after* `T`. The forward
+> quantity is the trailing feature read 24 bars later, so the estimator is identical to the
+> one in the feature column by construction rather than by a second implementation that
+> could drift from it.
+>
+> **The two windows share no returns.** Trailing uses returns indexed `T-23 .. T`; forward
+> uses `T+1 .. T+24`. Disjoint. There is no mechanical correlation from an overlapping bar.
+>
+> **The label looks forward and that is correct** (`src/labels/direction.py` states the same
+> rule). What must *not* look forward is `threshold[T]`, which is a trailing statistic and
+> is held to `DATA_CONTRACT.md` §1 by a truncation test — see §F.
+>
+> **Tie rule:** strict `>`. An exact tie resolves to `0`, matching the direction label's
+> convention. Reported as a tie rate, not left implicit.
+>
+> **Validity.** A label is undefined where the forward window `[T, T+24]` touches an invalid
+> bar (`label_validity`), and where the backward span `[T-1023, T]` does
+> (`feature_validity` at `L = threshold_window + vol_window = 1024`). Never imputed
+> (`DATA_CONTRACT.md` §6).
+
+#### §C. What is reused unchanged, and why that is the point
+
+> | component | reused | note |
+> |---|---|---|
+> | features | `LogReturn(24)`, `RealizedVol(24)`, `RangePosition(48)` | byte-identical to H-001 |
+> | folds | `walk_forward_folds`, 5 folds, `FIRST_TEST_FRACTION = 0.50`, spacing 24 | H-001 |
+> | combiner | `LogisticRegression` + `Standardizer`, 4 parameters | H-001 |
+> | scorer | `brier_skill_score` against in-window climatology | `EVALUATION.md` §3.2 |
+> | K-1 harness | `run_shuffled_label_study`, 30 seeds | `EVALUATION.md` §5.1 |
+> | bootstrap | `backtest.metrics.bootstrap_mean`, stationary, Politis–Romano | H-003 §F |
+>
+> A different label on identical machinery is the only configuration in which a null
+> directional result and a positive volatility result can be attributed to the label rather
+> than to anything else.
+
+#### §D. Primary metric, threshold, and the multiple-testing consequence — stated before the run
+
+> **Primary metric:** pooled out-of-sample Brier Skill Score across the five folds.
+> **Threshold:** `BSS >= 0.05` **and** the §E `p`-value clears Benjamini–Hochberg.
+>
+> `0.05` is not chosen here. It is K-3's materiality floor, which `EVALUATION.md` §5.1
+> already describes as the level "below which 'edge' is not a coherent claim". Using the
+> project's existing floor rather than a fresh one removes a degree of freedom.
+>
+> **A BSS of 0.03 is a FAIL under this registration.** Recording that now so it cannot be
+> reread afterwards as a partial success.
+>
+> **The BH arithmetic, computed in advance.** Registering this claim moves `N_claims` from
+> 3 to 4. At `m = 4, α = 0.05` the step-up critical values are `0.0125, 0.025, 0.0375,
+> 0.05`. The family's observed `p`-values are H-003 `0.0204`, H-007 `0.5041`, H-004 unrun
+> (counts in `m`, can never be rejected), and H-009 `p`.
+>
+> Working the step-up through:
+>
+> | condition | requires |
+> |---|---|
+> | `k = 1` rejects | `min(p, 0.0204) <= 0.0125` → `p <= 0.0125` |
+> | `k = 2` rejects | `max(p, 0.0204) <= 0.025` → `p <= 0.025` |
+> | `k = 3` rejects | `0.5041 <= 0.0375` → impossible |
+>
+> **So H-009's registered BH threshold is `p <= 0.025`.**
+>
+> **And a consequence that must be stated before the run, not discovered after it.** BH is
+> step-up: whenever H-009 clears at `p <= 0.025`, `k = 2` holds and the procedure rejects
+> the two smallest `p`-values — which includes **H-003 at 0.0204**. A volatility result
+> would drag a directional claim across §9's line.
+>
+> > **This does not restore H-003's directional reading, and nothing may later present it as
+> > having done so.** H-003's reading was withdrawn on H-007's substantive grounds —
+> > always-long matched the signal — not on §9's. Clearing a multiple-testing correction is
+> > not evidence about direction. The coupling is a mechanical artefact of putting a
+> > volatility claim and a directional claim in one BH family, which `EVALUATION.md` §9's
+> > "across all hypotheses" wording requires and which is not being reinterpreted here.
+>
+> That artefact is registered as an observation, and the family construction is left alone.
+
+#### §E. The `p`-value, and why it is not the shuffled-labels null
+
+> **Construction.** Per decision `i`, let `d_i = (base_rate − y_i)² − (p_i − y_i)²`, the
+> improvement in squared error over the climatological forecast. `mean(d) > 0` if and only
+> if `BSS > 0`. The `p`-value is one-sided, `H0: mean(d) = 0` against `H1: mean(d) > 0`,
+> from the stationary bootstrap already registered under H-003 §F:
+>
+> | constant | value |
+> |---|---|
+> | expected block | **10**, sensitivity reported at **1** and **25** |
+> | resamples | 10,000 |
+> | seed | 1337 |
+>
+> Identical to H-003 and H-007, so the three are comparable without a caveat.
+>
+> **Why not a permutation `p` from the 30 shuffled seeds.** Its floor is `1/31 = 0.032`,
+> above this hypothesis's own BH threshold of `0.025`. A test whose smallest attainable
+> `p` cannot clear its own threshold cannot pass, and choosing more seeds *after* noticing
+> that would be selecting the instrument to fit the bar. The shuffled-labels study still
+> runs, as K-1, for what it is for.
+
+#### §F. Gates that must clear before the primary metric may be read
+
+> | gate | condition | status if it fails |
+> |---|---|---|
+> | K-1 | shuffled-labels study on **this label**, 30 seeds, all three §5.1 conditions | **halt** — the result is void, not negative |
+> | K-1 fixtures | `label_in_features` and `target_encoding_on_all` must trip | **void** — the gate cannot fire, so its silence means nothing |
+> | K-6 | `>= 150` decisions on the grid | **no result**, not a negative one |
+> | threshold causality | `threshold[T]` bit-identical when recomputed on `df.iloc[:T+1]` | **halt** — K-2 in substance |
+>
+> **K-1 is re-run rather than inherited.** H-001 cleared K-1 for the *direction* label. The
+> label is the one thing changing here, and the label path is exactly where a new leak could
+> enter, so inheriting the clearance would be inheriting it across the change it is meant to
+> cover.
+>
+> **The threshold-causality check ships with an adversarial fixture** — a deliberately
+> centred (non-trailing) threshold that the same check must reject — per `EVALUATION.md`
+> §14. A truncation check that has never failed is indistinguishable from one that cannot.
+
+#### §G. Registered predictions — reported, and explicitly not pass conditions
+
+> Two predictions are recorded now so that agreement is evidence rather than hindsight. Per
+> the H-008 precedent, neither is a pass condition: making a surprising-but-legitimate
+> mechanism a failure builds a gate that fires on correctness.
+>
+> **(i) The sign of the `realized_vol_24` coefficient will be positive**, in every fold.
+> Volatility persists, so high current volatility should raise the probability that forward
+> volatility exceeds the six-week median. This is checked by a route that shares nothing
+> with the BSS computation — a deliberate application of §14, since a self-check that shares
+> the assumption is what let three of five prior defects through.
+>
+> > A high BSS with a **negative** coefficient is a flag: it means the model is winning for
+> > a reason opposite to the registered mechanism, and the PASS must not be acted on until
+> > that is explained. Flag, not verdict.
+>
+> **(ii) `realized_vol_24` alone will account for most of the skill.** A single-feature
+> variant is reported as an attribution diagnostic.
+>
+> > It is **not a competing configuration and cannot become the primary**, whatever it
+> > scores. The primary is the three-feature model, fixed here. Reporting two and keeping
+> > the better one is metric shopping under `RESEARCH.md` §5.3.
+
+#### §H. A known confound of this diagnostic, and its pre-committed non-rescue
+
+> The threshold adapts to the local volatility level; the feature does not. `Standardizer`
+> is fitted per fold on training rows, so a test era whose volatility level has shifted away
+> from its training prefix will degrade the mapping for reasons that are about
+> non-stationarity rather than about whether the feature layer works.
+>
+> This is real and is not being designed away — designing it away would need a new feature,
+> which would need a causal test, which is the burden this hypothesis exists to avoid.
+> Instead: **per-fold BSS is reported alongside the pooled figure**, so a level-shift
+> signature (strongly positive in some folds, strongly negative in others) is visible rather
+> than confounded into one number.
+>
+> > **Pre-committed:** fold-dependence is *reported* and does **not** rescue a pooled
+> > failure. A feature layer that forecasts volatility in two folds out of five is not a
+> > feature layer the next slice can be built on. If the pooled BSS misses 0.05, the verdict
+> > is FAIL whatever the per-fold pattern looks like.
+
+#### §I. Constants introduced by this hypothesis
+
+> | constant | value | class | note |
+> |---|---|---|---|
+> | horizon `H` | 24 bars | **forced** | matches H-001's registered horizon so the comparison to H-003/H-007 is apples-to-apples |
+> | vol window | 24 bars | **forced** | must equal `H` for `rv[T+H]` to be the forward realised vol |
+> | threshold window | **1000 bars** | **judgement** | ~6 weeks of H1 bars: long relative to volatility's persistence half-life, so the label is a question about level rather than about change; short enough not to be a whole-sample constant, which would import the global distribution into the label |
+> | BSS threshold | 0.05 | **forced** | K-3's existing materiality floor, not a new number |
+> | BH threshold | `p <= 0.025` | **derived** | §D, from `m = 4` and the family's existing `p`-values |
+> | bootstrap block / resamples / seed | 10 / 10,000 / 1337 | **forced** | H-003 §F |
+>
+> **One judgement constant, and it is not swept.** A sensitivity sweep over the threshold
+> window would not be a sensitivity analysis: it changes the label, therefore the question,
+> therefore the hypothesis. Three windows would be three hypotheses under `EVALUATION.md`
+> §9 and metric shopping under `RESEARCH.md` §5.3. 1000 is fixed here, before the run, and
+> is not revisited on the basis of what this run returns.
+
+#### §J. Pre-committed interpretation
+
+> **PASS — `BSS >= 0.05` and `p <= 0.025`, with §F clear.**
+>
+> > The feature layer measures something real, and the pipeline can extract it and score it
+> > out of sample at `H = 24`. The directional null from H-003/H-007 is then a statement
+> > about **direction specifically**, not about the project's wiring. Slice 1 — the
+> > capacity-ceiling measurement — becomes a meaningful test, because a null result from it
+> > could then be attributed to the absence of directional signal rather than to a broken
+> > instrument.
+>
+> **FAIL — anything else.**
+>
+> > **The feature layer itself is in question, not the horizon.** This is the reading, and
+> > it is registered now precisely because the tempting alternative reading — "H = 24 is the
+> > wrong horizon for volatility" — will be available afterwards and is wrong.
+> >
+> > The argument: volatility persistence is the strongest prior available on this
+> > instrument, `realized_vol_24` is a direct measurement of the quantity being forecast,
+> > and the forecast window is the same length as the measurement window. If a direct
+> > measurement of a persistent quantity cannot forecast that quantity one window ahead,
+> > the defect is **upstream** — in feature computation, in bar alignment, in the fold
+> > geometry, in the eligibility mask, or in the label path — and not in the choice of
+> > horizon and not in the market.
+> >
+> > **Required action on FAIL: audit the feature layer against external references, and do
+> > not run slice 1.** A capacity-ceiling measurement on a broken instrument returns a low
+> > ceiling and would be misread as "no signal exists on this instrument" — which is exactly
+> > the false conclusion this hypothesis is ordered first to prevent. The audit is the work;
+> > "investigate further" is not an action and is not what this says.
+>
+> **AMBIGUOUS — `BSS >= 0.05` but `p > 0.025`, or the 95% CI straddling 0.05.**
+>
+> > REJECT, per the template's default. Tie goes to the null.
+
+#### §K. What a PASS licenses, and what it does not
+
+> Licenses: **slice 1 only** — the capacity-ceiling measurement, registered separately
+> before it runs.
+>
+> Does not license: any trading claim, any rung of `EVALUATION.md` §2, any agent. This
+> hypothesis has **no cost model, no baseline ladder, and no trade** — volatility
+> forecastability as defined here is not a tradeable edge and must never be reported as one.
+> The ladder remains halted at rung 2.
+>
+> Explicitly recorded: if slice 1 is registered after a PASS here, **K-1 must be re-measured
+> at the new capacity.** `RETROSPECTIVE.md` §3 measured K-1 blind to `train_test_overlap` at
+> four parameters, and detectability is a property of the estimator. A high-capacity model
+> inherits nothing from the current clearance.
+
+#### §L. Why this is a claim and not a gate
+
+> It reads like machinery-checking, which is what gates do, and the registry's own
+> definition would let it be argued either way. It is registered as a **claim** for two
+> reasons:
+>
+> 1. It asserts skill (`BSS >= 0.05`) on real labels. That is edge-seeking in *form* whatever
+>    the intent, and a false positive here is possible in a way it is not for K-1 or K-2.
+> 2. A PASS is favourable and licenses further work. Anything that can license work by
+>    coming out one way is something there is an incentive to shop for, and the correction
+>    exists for exactly that.
+>
+> Counting it costs `N_claims` and tightens every threshold in the family, including its
+> own. That is the conservative direction and it is the right one.
+
+**Sample size expected**
+
+> ~1,300 decisions on the registered grid, against K-6's floor of 150. Slightly below
+> H-003's 1,364 because the 1,024-bar backward span invalidates more of the series head than
+> the 48-bar feature lookback did. Exact count reported before the verdict; label-free, so
+> it is known without seeing a result.
+
+**Dataset & window**
+
+> Snapshot `71f9fcf1…`, window `2015-09-11` → `2026-07-26` (H-006). Walk-forward, five
+> folds. **The sealed holdout is not opened and is not involved.**
+
+<!-- H-010 onward -->

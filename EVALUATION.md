@@ -293,3 +293,90 @@ Every evaluation report must contain, in this order:
 11. **Sample size, stated plainly, at the top of every percentage in the document**
 
 A report missing any section is not a report.
+
+---
+
+## 13. Observed Coverage of the Kill Criteria
+
+**Added 2026-07-28, after H-007. This section is an observation about §1, not an amendment
+to it.** No K-code is added, reworded, or reinterpreted here. §1's table is exactly what it
+was when it was written, and the whole point of the following is that it must stay that way
+while still being described accurately.
+
+**The thing that halted this project is not in the §1 table.**
+
+H-007 ran `EVALUATION.md` §2 rung 2 — always-long — and measured the signal's edge over it
+at `−0.000141 R`, `p = 0.5041`. That withdrew H-003's directional reading and stopped the
+ladder. No kill criterion fired at any point:
+
+| criterion | why it did not fire |
+|---|---|
+| K-4 | Covers **rung 1 only** — random entry with identical risk management. H-003 *passed* rung 1 at `p = 0.0204`. The rung that failed has no criterion attached to it. |
+| K-1, K-2, K-5, K-6 | Ran and stayed silent, correctly. |
+| K-3, K-7, K-8 | Never evaluated. The holdout is sealed, DSR is unbuilt, nothing has run live. |
+
+What actually stopped the work is **§2's ordering rule** — "failing rung *n* makes rungs
+*n+1* onward meaningless" — which is a stopping condition of equal force to anything in §1
+and is written in a different section, in prose, without an ID.
+
+**The consequence, recorded so it is not rediscovered:**
+
+> §1 is not the exhaustive list of conditions that can halt this project. It is the list of
+> conditions that were foreseen when it was written. A reader who treats the eight K-codes
+> as the complete set of stopping conditions will under-count, and will be surprised by a
+> halt exactly as this project was.
+
+**Why no K-code is being added.** §1 is immutable, and the reason is not ceremony. Adding
+"K-9 — fails to beat always-long" *now*, after always-long is what failed, is fitting the
+criteria to the outcome. The resulting table would look prescient and would have predicted
+nothing. A criterion earns its place by being written before the result it governs; one
+written afterwards is a description of the past wearing the costume of a rule.
+
+The correct response to a halt at an uncovered rung is to record the gap — which is what
+this section is — and to leave the table alone.
+
+---
+
+## 14. Why External References and Adversarial Fixtures Are Mandatory
+
+**Added 2026-07-28. This is a standing requirement, not advice.**
+
+Five instrument defects have been found and fixed in this project (`RETROSPECTIVE.md` §4:
+the gap census 223 → 73 → 7 → 2, the circular payrolls test, three UTC invariants, the 0.30
+peak-share threshold, the breakeven solver's false precision). Their common properties were
+measured, not assumed:
+
+- **Every one produced a fluent, internally consistent, wrong answer.** None emitted a
+  warning, a `NaN`, or a stack trace.
+- **Three of the five had a self-check that agreed with them, because the self-check shared
+  the defect's assumption.** The payrolls test resolved 08:30 New York to a UTC instant and
+  then asserted the bar at that instant was the 08:00 New York bar — the lookup key was the
+  answer, so it passed on data deliberately shifted by an hour. The DST verdict "TRACKS DST
+  — US RULE" was confirmed by a residual check that measured deviation from the very mode
+  that was arbitrary. The breakeven solver reported a bracket tolerance of 3.9 points for a
+  quantity with three sign changes, and the tolerance was computed correctly.
+- **None was caught by re-reading the code.** Each was caught by a second anchor, a
+  published calendar, a deliberately corrupted input, or a probe grid — something outside
+  the assumption under test.
+
+**Therefore, and without exception:**
+
+> A check verified only against code written from the same understanding is not verified.
+> Every gate in this project must be pinned by at least one of:
+>
+> 1. an **external reference** — a value derived outside the code path under test
+>    (a published exchange calendar, IANA `zoneinfo`, a broker announcement, a second
+>    independent measurement of the same physical quantity); or
+> 2. an **adversarial fixture** — a deliberately corrupted input that the gate is required
+>    to reject, committed alongside it.
+>
+> A gate with neither is recorded as unverified regardless of how many tests it passes.
+
+This is the reason `tests/fixtures/` carries a deliberately leaky feature, the reason
+`evaluation/pipeline.py` ships `LeakMode`, and the reason the payrolls check reads tick
+counts rather than labels. It is stated here so that the next gate is built this way by
+default rather than after a defect argues for it.
+
+Related and narrower, already recorded in `REPRODUCIBILITY.md` §10: a gate that passes, or
+fires, for a reason nobody can state is not a working gate. §14 is the stronger claim — a
+gate nobody has *tried to break from outside* has not been shown to work at all.
