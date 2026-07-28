@@ -139,6 +139,8 @@ class WalkForwardResult:
     probabilities: npt.NDArray[np.float64]
     outcomes: npt.NDArray[np.float64]
     bss: float
+    fitted_parameters: int
+    estimator: str
 
     @property
     def n_decisions(self) -> int:
@@ -218,9 +220,17 @@ def run_walk_forward(
     pooled_p = np.concatenate([r.probabilities for r in results])
     pooled_y = np.concatenate([r.outcomes for r in results])
 
+    # Capacity as fitted, not as declared. The combiner allocates one weight
+    # per design column plus an intercept, so this is the parameter count the
+    # optimiser actually searched over -- read from the array that reached it
+    # rather than from any module's source. `evaluation/sensitivity.py` keys
+    # the K-1 guard on this, because capacity can be raised through the design
+    # matrix without a byte of `models/logistic.py` changing.
     return WalkForwardResult(
         fold_results=tuple(results),
         probabilities=pooled_p,
         outcomes=pooled_y,
         bss=brier_skill_score(pooled_p, pooled_y),
+        fitted_parameters=int(design.shape[1]) + 1,
+        estimator=f"{model_factory.__module__}.{model_factory.__qualname__}",
     )

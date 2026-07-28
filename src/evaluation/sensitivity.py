@@ -26,12 +26,39 @@ Capacity is not the module alone
 The combiner has ``n_features + 1`` parameters, so adding a feature to the
 H-001 design raises capacity just as surely as swapping the estimator.
 :data:`RECORDED_PARAMETER_COUNT` is therefore checked as well.
+
+Why an AST fingerprint is not sufficient — the defect H-010 records
+-------------------------------------------------------------------
+
+The fingerprint reads ``models/logistic.py``. Capacity can be raised without
+touching a byte of it:
+
+1. **Through the design matrix.** A polynomial expansion of the same three
+   features fits 20 parameters at degree 3. ``logistic.py`` is unchanged, the
+   fingerprint does not move, and :data:`RECORDED_PARAMETER_COUNT` continues to
+   declare 4.
+2. **Through a different estimator class.** ``run_walk_forward`` takes a
+   ``model_factory``. Passing a subclass with a different stopping rule changes
+   what is fitted while leaving the recorded module untouched.
+
+A guard against one route to a change is not a guard against the change. So the
+record is keyed on a **capacity signature** — the parameter count as *fitted*,
+the estimator class as *used*, and the module fingerprint — of which the first
+two are measured by running the pipeline rather than read from source.
+``EVALUATION.md`` §14 requires a gate be pinned by an external reference or an
+adversarial fixture; ``tests/evaluation/test_sensitivity.py`` supplies the
+fixture for both blind routes, and asserts in the same test that the AST
+fingerprint stays put — which is what makes the fixture a demonstration rather
+than a tautology.
 """
 
 import ast
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
+
+from evaluation.pipeline import WalkForwardResult
 
 COMBINER_MODULE: Final = (
     Path(__file__).resolve().parent.parent / "models" / "logistic.py"
@@ -84,6 +111,83 @@ RECORDED_RUN_ID: Final = "5c6c585b-7531-48bd-945c-8c077b759a05"
 """The harness_validation run this baseline came from. run_type is not
 `evaluation` and carries no hypothesis_id, so it is a record of gate
 behaviour and never evidence for H-001."""
+
+RECORDED_ESTIMATOR: Final = "models.logistic.LogisticRegression"
+"""The combiner class actually fitted at the recorded measurement."""
+
+
+@dataclass(frozen=True, slots=True)
+class CapacitySignature:
+    """What the pipeline actually fitted, and what it was fitted with.
+
+    Two of the three fields are measured by running the pipeline; only
+    :attr:`combiner_fingerprint` is read from source. That asymmetry is
+    deliberate — it is the source-only reading that H-010 found to be blind.
+    """
+
+    fitted_parameters: int
+    estimator: str
+    combiner_fingerprint: str
+
+    def differences(self, other: "CapacitySignature") -> tuple[str, ...]:
+        """Name every component that disagrees.
+
+        Args:
+            other: Signature to compare against.
+
+        Returns:
+            One human-readable line per differing component, empty when the
+            two agree.
+        """
+        lines: list[str] = []
+        if self.fitted_parameters != other.fitted_parameters:
+            lines.append(
+                f"fitted_parameters: {self.fitted_parameters} != "
+                f"{other.fitted_parameters}"
+            )
+        if self.estimator != other.estimator:
+            lines.append(f"estimator: {self.estimator} != {other.estimator}")
+        if self.combiner_fingerprint != other.combiner_fingerprint:
+            lines.append(
+                f"combiner_fingerprint: {self.combiner_fingerprint} != "
+                f"{other.combiner_fingerprint}"
+            )
+        return tuple(lines)
+
+
+def capacity_signature(result: WalkForwardResult) -> CapacitySignature:
+    """Read the capacity signature off a completed walk-forward.
+
+    Args:
+        result: A walk-forward run on the design whose capacity is in question.
+            Use :data:`~evaluation.pipeline.LeakMode.NONE`: the leak modes that
+            append a column raise the fitted parameter count by construction,
+            and that inflation is a property of the fixture, not of the
+            combiner.
+
+    Returns:
+        The signature, for comparison against
+        :data:`RECORDED_CAPACITY_SIGNATURE`.
+    """
+    return CapacitySignature(
+        fitted_parameters=result.fitted_parameters,
+        estimator=result.estimator,
+        combiner_fingerprint=combiner_fingerprint(),
+    )
+
+
+RECORDED_CAPACITY_SIGNATURE: Final = CapacitySignature(
+    fitted_parameters=RECORDED_PARAMETER_COUNT,
+    estimator=RECORDED_ESTIMATOR,
+    combiner_fingerprint=RECORDED_COMBINER_FINGERPRINT,
+)
+"""Capacity at the last recorded re-measurement.
+
+Any route that changes what the combiner fits moves at least one component.
+Moving one without re-running the leak-fixture suite is the defect
+``REPRODUCIBILITY.md`` §6 prohibits, and it is now prohibited by measurement
+rather than by reading one file.
+"""
 
 
 def _strip_docstrings(tree: ast.AST) -> ast.AST:
