@@ -14,10 +14,11 @@
 Registered (registry completeness) ... 11
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
-  ├─ Rejected ....................... 2   H-007 (rung 2, 2026-07-28)
+  ├─ Rejected ....................... 3   H-007 (rung 2, 2026-07-28)
   │                                       H-009 (volatility, 2026-07-28)
+  │                                       H-010 (capacity gate, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 6
+  └─ In flight ...................... 5
 
 N_claims (multiple-testing denom.) ... N = 5
   ├─ gates  (not counted) ........... 6   H-001, H-002, H-005, H-006, H-008, H-010
@@ -2439,7 +2440,8 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 
 - **Registered:** 2026-07-28 UTC
 - **Class:** gate — does not count toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** **REJECTED** — the four pass conditions are "all required", and (iv) cannot
+  be satisfied at C-3, C-4 or C-5. Passes at C-0, C-1, C-2. H-011 does not execute.
 - **Order:** must PASS before H-011 executes. An H-011 run that predates this gate's
   result is **VOID**, not "pending confirmation".
 
@@ -2545,6 +2547,207 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 >   leak at that capacity. This is not a negative result about capacity — it is no result.
 > - **FAIL at a non-primary rung:** that rung is excluded from the reported profile and the
 >   exclusion is stated in the result, not in an appendix.
+
+--- RUN ---
+
+- **Executed:** 2026-07-28, commit `4e3d9eb`, clean tree
+- **Rows:** `runs/h010_frozen.json`, `runs/h010_convergent.json`
+- **Registration precedes the code:** registration `312d9ba`, guard fix `8f3291a`,
+  machinery `4e3d9eb`. §2 rule 1 satisfied.
+- **Data:** 30,000 synthetic bars, seed 42; 834 pooled decisions across 5 folds; 30 seeds
+  per configuration. `run_type: harness_validation`, no `hypothesis_id` — a record of gate
+  behaviour, never evidence for H-001 or H-011.
+- **Verdict:** **PASS at C-0, C-1, C-2. FAIL at C-3, C-4, C-5** — condition (iv) is not
+  satisfiable there. **H-011 does not execute.**
+
+**Condition (ii) — reproduction — holds, and the condition itself was mis-registered**
+
+> C-0 under the frozen rule reproduces `RECORDED_MEAN_BSS` on all five modes:
+> `none` `-0.001390`, `label_in_features` `+0.999984`, `target_encoding_on_all`
+> `+0.239781`, `train_test_overlap` `-0.000901`, `scaler_fit_on_all` `-0.001390`. Identical
+> at every recorded digit. The degree-1 expansion is the identity, so this was the outcome
+> that would have indicted the expansion rather than taught anything, and it did not.
+>
+> **The registered tolerance was `1e-9` against a record carried to six decimal places.**
+> That comparison cannot be made: the record does not hold the digits it would need. What
+> is checkable — exact agreement at the recorded precision — holds. Recorded as a defect in
+> this registration rather than silently reinterpreted.
+
+**Condition (i) — capability — holds at every rung**
+
+> `label_in_features` reaches `+0.999984` at 5, 8, 11, 21, 36 and 57 fitted parameters.
+> The transferable requirement transferred.
+
+**The frozen-rule table — 30 seeds, mean BSS, with fitted parameter count**
+
+> | rung | p | `none` | `label_in_features` | `target_encoding_on_all` | `train_test_overlap` | `scaler_fit_on_all` |
+> |---|---:|---:|---:|---:|---:|---:|
+> | C-0 | 4 | −0.001390 | **+0.999984** | **+0.239781** | −0.000901 | −0.001390 |
+> | C-1 | 7 | −0.001754 | **+0.999984** | **+0.239659** | −0.000949 | −0.001754 |
+> | C-2 | 10 | −0.001850 | **+0.999984** | **+0.239460** | −0.000856 | −0.001850 |
+> | C-3 | 20 | −0.002345 | **+0.999984** | **+0.239245** | −0.000666 | −0.002344 |
+> | C-4 | 35 | −0.129314 | **+0.999984** | **+0.238961** | −0.130000 | −0.129032 |
+> | C-5 | 56 | −0.390547 | **+0.999984** | **+0.084102** | −0.392723 | −0.390467 |
+>
+> Bold trips. The tripping set is `{label_in_features, target_encoding_on_all}` at every
+> rung and the silent set is `{train_test_overlap, scaler_fit_on_all}` at every rung —
+> **unchanged from four parameters to fifty-six.** The modes that append a column fit one
+> parameter more than the rung declares, which is a property of the fixture and is recorded
+> beside each row rather than absorbed.
+
+**At what parameter count does `train_test_overlap` stop being silent**
+
+> **It does not. Not at any point on this ladder.** That is the answer, and it is not the
+> one the guard's own documentation predicted.
+>
+> `REPRODUCIBILITY.md` §6 says the leak "becomes detectable as capacity grows". Measured
+> against the clean null at the same rung, it does:
+>
+> | rung | p | clean null | `train_test_overlap` | excess |
+> |---|---:|---:|---:|---:|
+> | C-0 | 4 | −0.001390 | −0.000901 | **+0.000489** |
+> | C-1 | 7 | −0.001754 | −0.000949 | **+0.000805** |
+> | C-2 | 10 | −0.001850 | −0.000856 | **+0.000994** |
+> | C-3 | 20 | −0.002345 | −0.000666 | **+0.001679** |
+> | C-4 | 35 | −0.129314 | −0.130000 | −0.000686 |
+> | C-5 | 56 | −0.390547 | −0.392723 | −0.002176 |
+>
+> The excess rises monotonically from 4 to 20 parameters and roughly triples. The mechanism
+> §6 describes is real and is now measured rather than asserted. **It is also two orders of
+> magnitude short.** At 20 parameters the leak shows up as `+0.00168` against a trip
+> threshold of `0.05` — a factor of thirty — and above 20 parameters the excess turns
+> *negative*, because the estimator has stopped fitting.
+>
+> **K-1's known blind spot is not closable by capacity within this estimator family.**
+> Closing it needs a different family — the gradient-boosted stacker `EVALUATION.md` §2
+> rung 7 names — and that is a different change requiring its own ID. The blind spot stays
+> open, and it stays open for a reason that is now measured instead of assumed.
+
+**Why C-4 and C-5 fail, and why "K-1 passed" there means nothing**
+
+> At C-4 and C-5 the clean null collapses to `−0.129` and `−0.391`. K-1's three registered
+> conditions all hold at those numbers — CI upper below ε, no seed reaching 0.05, median
+> below zero — so the gate returns **PASS**.
+>
+> **It is a vacuous pass.** The gate is satisfied because an unregularised 35- and
+> 56-parameter fit at a thousand gradient steps produces out-of-sample probabilities worse
+> than climatology by a wide margin, not because no leak is present. A gate that passes
+> because the instrument stopped working is `REPRODUCIBILITY.md` §10 exactly: a gate that
+> passes for a reason nobody can state is not a working gate. It is recorded here as a pass
+> that must not be cited.
+>
+> Corroborating, from the same run: `target_encoding_on_all` falls from `+0.239` to
+> `+0.084` at C-5 — the one leak a low-capacity linear model reads most easily is becoming
+> hard to read, within 1.7x of the trip threshold. The instrument is degrading, and it
+> degrades toward silence, which is the direction that hides failures.
+
+**Condition (iv) — the null re-measured under the rule H-011 will use — cannot be met**
+
+> The convergence rule is `grad_inf <= 1e-6`, cap `1e6`. Measured on the largest training
+> pool (fold 4, n = 25,929), with the Gram condition number that explains it:
+>
+> | rung | p | cond(gram) | gradient at 1e3 | 1e4 | 1e5 | reaches 1e-6? |
+> |---|---:|---:|---:|---:|---:|---|
+> | C-0 | 4 | 1.21e+01 | — | — | — | **yes, 337 iterations** |
+> | C-1 | 7 | 5.41e+02 | 1.33e-04 | — | — | **yes, 8,664** |
+> | C-2 | 10 | 4.52e+03 | 1.86e-04 | 3.52e-06 | — | **yes, 17,618** |
+> | C-3 | 20 | 1.04e+06 | 2.42e-04 | 1.46e-04 | 4.62e-05 | not by 1e5 |
+> | C-4 | 35 | 1.82e+08 | 1.63e-01 | 1.57e-01 | 1.51e-01 | **stalled** |
+> | C-5 | 56 | 2.87e+10 | 2.89e-01 | 2.80e-01 | 2.74e-01 | **stalled** |
+>
+> The condition number of the polynomial design rises by nine orders of magnitude across
+> the ladder. First-order descent at a fixed step needs `O(kappa)` iterations, and at C-4
+> the gradient moves from `0.1634` to `0.1510` across a hundredfold increase in iterations.
+> That is not slow convergence. It is a stall.
+>
+> **C-3 is different and the difference was measured rather than extrapolated.** At the
+> registered `1e6` cap on the *smallest* fold (n = 9,929) it converged: **533,168
+> iterations, gradient `1.0000e-06`, 216 s**. So C-3 is reachable — and reaching it for the
+> full suite is 5 folds x 5 modes x 30 seeds at that cost, on the order of **150 hours for
+> one rung**. Reachable and unaffordable are different findings and are reported as
+> different findings. The largest-fold measurement at the full cap was started and stopped
+> to free the machine for the sweep; it is not reported as completed.
+
+**A second mechanism, independent of conditioning, that blocks (iv) at every rung**
+
+> The convergent sweep was launched for C-0, C-1 and C-2 — the rungs the conditioning
+> analysis says are reachable. It completed **one cell**: `C-0 / none`, mean BSS
+> `-0.001389` against the frozen rule's `-0.001390`, converged, 13.1 s. It then spent
+> twelve minutes on `C-0 / label_in_features` without finishing, and was stopped and
+> measured directly instead.
+>
+> | C-0, fold 0 | cond(gram) | iterations to `1e-6` | time, one fold |
+> |---|---:|---:|---:|
+> | clean design | 1.209e+01 | **314** | 0.0 s |
+> | + planted label | 1.235e+01 | **426,723** | **72.7 s** |
+>
+> **The conditioning is the same. The cost is 1,359x.** The cause is not the Gram matrix —
+> it is **separability**. Appending the label makes the training set perfectly separable,
+> so the unpenalised optimum is at infinity and the `1e-6` ridge only pulls it back to a
+> very large finite value that first-order descent approaches asymptotically. The gradient
+> falls `2.0e-03 -> 1.96e-04 -> 1.49e-05 -> 1.0e-06` across three decades of iterations,
+> and converges only in the last decade before the cap.
+>
+> The capability fixture is therefore ~3 hours per rung under the convergence rule at the
+> **cheapest** rung, before any conditioning problem is reached. **Condition (iv) is
+> unaffordable at every rung on the leak fixtures and unreachable at C-3 and above on all
+> of them.** Two independent mechanisms, neither named in the registration, each sufficient
+> on its own.
+>
+> Both are properties of pairing a first-order optimiser with a fixed step size to
+> objectives whose optima are either ill-conditioned or at the boundary. Neither is a
+> property of capacity, which is what H-011 set out to vary.
+
+**What this does to H-011**
+
+> H-011's primary rung is C-3 and its primary fitting rule is the convergence stop. **That
+> combination is not executable.** Under the pre-committed interpretation above, the FAIL
+> branch at C-3 is active: **H-011 does not execute at all.**
+>
+> The correct action is the registered one. H-011 is not rerun at C-2 to get a number, and
+> its primary rung is not moved: choosing the rung after seeing which ones are affordable
+> is `RESEARCH.md` §5.2, and the fact that the constraint is computational rather than
+> statistical does not change what selecting on it would be. A registration that turns out
+> to be unexecutable is corrected by a **new hypothesis**, registered before it runs.
+>
+> H-011 stays `REGISTERED` and unexecuted. It is not `VOID`: nothing about it was
+> invalidated, and its `N_claims` draw stands — the question was asked, and the answer is
+> that this instrument cannot answer it.
+
+**What was learned that no registration anticipated**
+
+> The capacity axis was chosen because it was the cheap one: same features, same label,
+> same optimiser, one number changing. It is cheap in every respect except the one that
+> turned out to bind. **Raising the parameter count of a polynomial design raises the
+> condition number far faster than it raises the parameter count** — 4 to 56 parameters is
+> 14x; 12 to 2.9e10 in conditioning is nine orders of magnitude — and a first-order
+> optimiser is the wrong instrument at the far end of that. Nothing in the registration
+> mentioned conditioning. It is the constraint that decided the run.
+>
+> The registration reasoned carefully about *one* way the optimiser could produce a fluent
+> wrong answer — a fixed budget silently underfitting — and built a VOID condition for it.
+> That reasoning was right, and the measurement confirms it: at C-3 the frozen fit
+> demonstrably disagrees with IRLS. What it did not anticipate is that the fix has its own
+> failure modes, that there are two of them, that they are unrelated to each other, and
+> that neither is about capacity. **Registering a guardrail against a known failure is not
+> the same as knowing the instrument**, and the gap between those two is where this run
+> ended up.
+
+**Recorded for whatever replaces H-011**
+
+> Not amendments — H-011 is not edited. These are the measured facts a successor
+> registration would have to answer, written down while they are fresh:
+>
+> 1. A polynomial basis on three features is a badly conditioned capacity axis. Any
+>    successor either orthogonalises the basis, or uses a second-order solver, or does not
+>    use polynomials.
+> 2. The capability fixture is separable by construction, so *any* convergence criterion
+>    stated as a gradient tolerance is expensive on it. A successor states its capability
+>    criterion in a form separability does not blow up — a fitted-probability threshold, or
+>    a tolerance on the *change* in fitted probabilities rather than on the gradient.
+> 3. The frozen rule ran the entire ladder in under an hour and reproduced the recorded
+>    baseline exactly. It is a usable instrument for what it measures; what it cannot do is
+>    support a claim about capacity, because above 20 parameters it stops fitting.
 
 ---
 
