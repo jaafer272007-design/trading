@@ -7,6 +7,7 @@ import pytest
 
 from data.synthetic import generate_ohlcv
 from evaluation.manifest import (
+    H005_DEVIATION_NOTICE,
     RunManifest,
     RunType,
     feature_set_version,
@@ -119,6 +120,46 @@ def test_carries_every_reproducibility_section_5_field() -> None:
         "runtime_seconds",
     ):
         assert key in payload, f"missing §5 field: {key}"
+
+
+# ---------------------------------------------------------------------------
+# H-005 (iii) — the deviation notice, emitted by the writer
+# ---------------------------------------------------------------------------
+
+
+def test_a_cost_model_version_pulls_the_h005_notice_in_automatically() -> None:
+    """H-003 §I.2: the notice is emitted by the manifest writer, not the caller.
+
+    A notice the caller supplies is a notice the caller can forget, reword, or
+    quietly drop on the one run where it matters.
+    """
+    manifest = _manifest(
+        run_type=RunType.EVALUATION, hypothesis_id="H-003", cost_model_version="beef"
+    )
+
+    assert manifest.cost_model_deviation == H005_DEVIATION_NOTICE
+    payload = json.loads(manifest.to_json())
+    assert payload["cost_model_version"] == "beef"
+    assert "not satisfying" not in payload["cost_model_deviation"]
+    assert "may be described as satisfying" in payload["cost_model_deviation"]
+
+
+def test_a_run_that_applies_no_costs_carries_no_notice() -> None:
+    manifest = _manifest(run_type=RunType.EVALUATION, hypothesis_id="H-001")
+
+    assert manifest.cost_model_version is None
+    assert manifest.cost_model_deviation is None
+
+
+def test_the_notice_is_not_a_constructor_argument() -> None:
+    # ``init=False``: there is no way to pass a different one in.
+    with pytest.raises(TypeError):
+        _manifest(
+            run_type=RunType.EVALUATION,
+            hypothesis_id="H-003",
+            cost_model_version="beef",
+            cost_model_deviation="costs are fine actually",
+        )
 
 
 # ---------------------------------------------------------------------------

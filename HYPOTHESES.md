@@ -11,19 +11,31 @@
 > makes.
 
 ```
-Registered (registry completeness) ... 6
-  ├─ Accepted ....................... 1   H-001 (K-1 does not trip, 2026-07-27)
+Registered (registry completeness) ... 8
+  ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
+  │                                       H-003 (K-4, 2026-07-28) — see note
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 4
+  └─ In flight ...................... 5
 
-N_claims (multiple-testing denom.) ... N = 2
-  ├─ gates  (not counted) ........... 4   H-001, H-002, H-005, H-006
-  └─ claims (counted) ............... 2   H-003, H-004
+N_claims (multiple-testing denom.) ... N = 3
+  ├─ gates  (not counted) ........... 5   H-001, H-002, H-005, H-006, H-008
+  └─ claims (counted) ............... 3   H-003, H-004, H-007
 
 Holdout openings used ............... 0 / 3
 FDR correction level ................ α = 0.05, Benjamini–Hochberg
 ```
+
+> **Note on H-003, 2026-07-28 — why it is marked "see note".** Registering H-007 moved
+> `N_claims` from 2 to 3. Under `EVALUATION.md` §9 that moves the Benjamini–Hochberg
+> rank-1 critical value from `0.05 x 1/2 = 0.025` to `0.05 x 1/3 = 0.0167`, and H-003's
+> `p = 0.0204` no longer clears it on its own. BH is a step-up procedure, so H-003
+> recovers if H-007 returns `p ≤ 0.0333`, and does not otherwise.
+>
+> **H-003's acceptance is therefore contingent on a run that has not happened.** Recorded
+> here and in H-007 *before* that run rather than after it. This is the correction doing
+> what it exists for: registering another claim weakened an accepted one, visibly, at the
+> moment of registration.
 
 In flight = status REGISTERED or RUNNING.
 
@@ -503,8 +515,9 @@ phase.
   engine exists (see §2 rule 1)
 - **Cost constants amended:** 2026-07-28 — still before any run, after the engine was
   built to §I and introduced constants the specification could not have named (§J–§N)
+- **Executed:** 2026-07-28 on real market data
 - **Class:** claim — counts toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** ACCEPTED — K-4 does not trip
 
 **Claim**
 > A single-agent deterministic baseline will beat random entry with identical risk
@@ -900,6 +913,145 @@ risk management" actually are**
 >   wrong. Return to feature research.
 > - AMBIGUOUS (the one-sided bootstrap CI straddles zero): **REJECT.** §3's default, and
 >   the default is not overridden by a favourable point estimate.
+
+--- RUN ---
+
+- **Run manifest:** `runs/13ae20a1-76b6-402e-b256-3e4f7dad14bd.json`
+  sha256 `53cde12e6b0fe3bf13e24270d1f0978e4bec03836922c5099234e467ca5ebed5`
+- **run_id:** `13ae20a1-76b6-402e-b256-3e4f7dad14bd`
+- **Executed:** 2026-07-28, commit `33ca731`, `git_dirty: false`
+- **Registration precedes the run:** §A–§I committed `a617a29` (merged `293c150`),
+  §J–§N committed `574677f` (merged `cf3fb28`). Both predate the run commit.
+- **Data:** derived snapshot
+  `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`,
+  1,364 decisions, K-6 cleared at 9.1x.
+- **Cost model:** `ff16183e7684e0fc…`, H-005 deviation notice carried in the manifest.
+- **Verdict:** **ACCEPTED — K-4 does not trip.**
+
+**The primary test**
+
+> | block | mean difference (R) | 95% CI | one-sided p |
+> |---|---|---|---|
+> | **10 (registered)** | **+0.060398** | **[+0.005120, +0.117878]** | **0.0204** |
+> | 1 (sensitivity) | +0.060398 | [+0.008934, +0.111278] | 0.0109 |
+> | 25 (sensitivity) | +0.060398 | [−0.001503, +0.122639] | 0.0288 |
+>
+> Signal expectancy −0.096292 R, control mean −0.156689 R over 30 seeds
+> (min −0.204602, max −0.099200). **Zero of thirty control arms did as well as the
+> signal.** Stationary bootstrap, 10,000 resamples, seed 1337.
+>
+> **At block 25 the two-sided 95% interval includes zero.** The one-sided p still
+> clears 0.05, and the two are consistent — a one-sided p just under 0.05 corresponds
+> to a two-sided interval that barely touches zero — but the verdict rests on the
+> registered block and that is worth stating rather than reporting only the three
+> p-values.
+
+**§9 multiple-testing correction — the number this turns on**
+
+> Benjamini–Hochberg across `N_claims = 2` puts the critical value for the most
+> significant claim at `0.05 x 1/2 = 0.025`.
+>
+> - block 10 (registered): **p = 0.0204 ≤ 0.025 — survives**, by 0.0046.
+> - block 1: p = 0.0109 — survives.
+> - block 25: p = 0.0288 **> 0.025 — would not survive**.
+>
+> The result clears §9 at the registered block length and would not clear it at the
+> upper end of its own registered sensitivity range. That is the single tightest
+> margin in this run and it is recorded as such.
+
+**Per fold, alongside pooled**
+
+> | fold | n | signal R | control R | difference R | test era |
+> |---|---|---|---|---|---|
+> | 0 | 273 | +0.008234 | −0.200376 | **+0.208609** | 2017-10-07 |
+> | 1 | 273 | −0.113504 | −0.221234 | +0.107730 | straddles |
+> | 2 | 273 | −0.144524 | −0.204437 | +0.059913 | 2022-10-21 |
+> | 3 | 273 | −0.195886 | −0.102641 | **−0.093245** | 2022-10-21 |
+> | 4 | 272 | −0.035555 | −0.054385 | +0.018830 | 2022-10-21 |
+> | pooled | 1,364 | −0.096292 | −0.156689 | +0.060398 | — |
+>
+> **The effect is not uniform and one fold reverses it.** It is largest in fold 0,
+> declines monotonically through fold 3, and fold 3 is negative. Folds 2, 3 and 4 test
+> entirely inside the 2022-10-21 era on training pools that are majority pre-2022 —
+> the condition H-006's era term exists to make visible, and it is now visible in a
+> result rather than only in the geometry.
+
+**Realised cost per arm, per decision, in R**
+
+> | component | signal | control | divergence |
+> |---|---|---|---|
+> | spread | 0.101342 | 0.101334 | 0.000008 |
+> | slippage | 0.021793 | 0.021793 | 0.000000 |
+> | latency | 0.005059 | 0.005163 | 0.000104 |
+> | commission | 0.001121 | 0.001121 | 0.000000 (identical by construction) |
+> | swap | 0.000738 | 0.000672 | 0.000067 |
+> | gap-through | 0.002719 | 0.002622 | (diagnostic, already inside gross) |
+> | **total** | **0.130053** | **0.130082** | **0.000030** |
+>
+> **Cost invariance holds.** Divergence is 0.05% of the measured effect, far inside the
+> registered 10% tolerance, and no identical-by-construction component moved. The
+> floor-insensitivity claim of §E may be made for this run.
+
+**Breakeven spread**
+
+> - **Signal arm, absolute expectancy: there is none.** Expectancy is **−0.006063 R at
+>   a spread floor of zero.** The signal arm does not make money at any cost
+>   assumption, including no costs at all.
+> - **Paired difference: 1,447.3 points**, bracketed to within 3.9 — 19x the registered
+>   75-point floor. Reported although invariance holds, because a number is more useful
+>   than the argument it replaces.
+
+**K-5 — every cost doubled**
+
+> Difference **+0.067853 R**, 95% CI [+0.013624, +0.123120], p = 0.0078. The difference
+> does not disappear; it grows slightly, because doubling the spread moves the
+> executable price and therefore which bar a position exits on. **K-5 does not trip.**
+
+**What this result does not say, stated at the same volume as what it does**
+
+> 1. **The signal arm loses money.** −0.096292 R per decision, and −0.006063 R even at
+>    zero spread. It loses *less* than random entry, which is the entire content of the
+>    claim. Nothing here is a profitability finding.
+> 2. **The leading alternative explanation is long bias, and this run cannot exclude
+>    it.** The signal went long 767 times and short 597 — **56.2% long** against the
+>    control's 50% by construction. Gold has a secular uptrend over this window. That
+>    confound is exactly what `EVALUATION.md` §2 rung 2 isolates, and rung 2 has not
+>    been run. It is not run here: §G deferred rungs 2–4 to their own hypothesis ID
+>    precisely so a confound could not be tested with an unregistered arm inside the run
+>    it threatens.
+> 3. **A negative-BSS model beat random entry directionally.** H-001's unshuffled
+>    control measured BSS −0.006766 for this combiner. There is no contradiction — the
+>    sign of `p − 0.5` can carry information while the probability is badly calibrated —
+>    but the pairing should be read as a caution about the combiner, not as
+>    corroboration.
+> 4. **Tier 2 at best** under `RESEARCH.md` while H-005 is open, and the event model
+>    reaches 2.83% of bars (§M). Every non-payrolls scheduled release is priced at the
+>    flat floor, an optimistic error that K-5 and the breakeven spread bound rather than
+>    remove.
+
+**Judgement-constant sensitivity, since the §9 margin is thin**
+
+> Seven of the nine judgement constants (§L) are cost constants, and this run measures
+> that the verdict does not turn on any of them: total cost divergence between the arms
+> is 0.000030 R against an effect of 0.060398 R, and the difference's breakeven spread
+> is 19x the floor. Errors in slippage, commission, swap or the latency coefficient
+> cannot move it.
+>
+> The two that are not measured by this run:
+>
+> - **The 1.5x ATR stop and target.** Both arms share it, so it does not bias the
+>   comparison — but it fixes the payoff shape of every decision, and the *magnitude* of
+>   the difference is a function of it. This run says nothing about what the difference
+>   would be at 1.0x or 2.5x. It is the one judgement constant the verdict could turn
+>   on, and it is unmeasured.
+> - **The bootstrap block length** is measured across its own registered range and the
+>   verdict holds at 1, 10 and 25 against α = 0.05 — but not against the §9-corrected
+>   0.025 at block 25. See above.
+
+**Pre-committed action taken**
+
+> PASS. **Proceed to `EVALUATION.md` §2 rung 2** — always-long — which is also the test
+> of this result's leading confound. Not to rungs 3–5, and not to the agent panel.
 
 ---
 
@@ -1356,4 +1508,224 @@ becomes an explicit term**
 - **Blocked alongside:** `REVIEW_ITEMS.md` R-001, against the era boundaries. Open. It does
   not block this gate or the term; it blocks registering a session-relative feature.
 
-<!-- H-007 onward -->
+---
+
+### H-007 — Signal beats always-long (`EVALUATION.md` §2 rung 2)
+
+- **Registered:** 2026-07-28 UTC
+- **Class:** claim — counts toward `N_claims`
+- **Status:** REGISTERED
+
+**Claim**
+> Over H-003's 1,364 decisions and H-003's risk geometry, the signal's expectancy per
+> decision will exceed an always-long arm's at one-sided `p < 0.05`.
+
+**Why this is the next thing and not something else**
+
+> H-003 accepted: the signal beat random entry by +0.060398 R, `p = 0.0204`. It also went
+> **long 767 times and short 597 — 56.2% long** — against a control that is 50% long by
+> construction, on an instrument with a secular uptrend across the evaluation window.
+>
+> **A long bias produces exactly that difference with zero directional skill.** Rung 2 is
+> the registered instrument for separating the two, and H-003 §G deferred it to its own
+> ID precisely so the confound could not be tested with an unregistered arm inside the run
+> it threatens. This is that ID.
+
+**Registering this changes what H-003 currently means — stated before the run**
+
+> `N_claims` goes 2 → 3. `EVALUATION.md` §9 applies Benjamini–Hochberg across the family,
+> and the family is the registered claims, tested or not.
+>
+> Worked through, with H-004 untested and therefore carrying no p-value:
+>
+> | family | H-003's BH position |
+> |---|---|
+> | m = 2 (at H-003's decision point) | rank 1 critical `0.05 x 1/2 = 0.025`; **p = 0.0204 clears** |
+> | m = 3, H-007 registered but not run | rank 1 critical `0.05 x 1/3 = 0.0167`; **p = 0.0204 does not clear** |
+> | m = 3, H-007 returns `q` | BH is step-up: `k = 2` holds when `p(2) ≤ (2/3)(0.05) = 0.0333` |
+>
+> So: **H-003's acceptance is now contingent on this run returning `p ≤ 0.0333`.** If
+> H-007 comes back above that, neither claim clears the correction and H-003's verdict
+> does not survive the enlarged family.
+>
+> This is recorded here rather than by editing H-003 — §2 forbids editing an entry after
+> its run — and it is recorded *before* H-007 executes so that it cannot be presented
+> afterwards as a discovery. It is also the multiple-testing machinery doing exactly what
+> it exists for: **registering another claim weakened an accepted one, visibly.**
+
+**Change under test**
+> One thing: the direction source. Always-long replaces the combiner. The decision grid,
+> the risk geometry, the cost model, the eligibility mask and the bootstrap are H-003's,
+> unchanged.
+
+**The signal arm is H-003's, not a refit**
+
+> The same probabilities, from the same per-fold combiner fits, over the same 1,364
+> decisions. Refitting would introduce a degree of freedom between two runs that are
+> supposed to differ in one thing.
+
+**The control**
+> `AlwaysLong` — `Direction.LONG` at every decision. Deterministic, so **one control arm,
+> not thirty**: there is no seed to sweep. The paired statistic is
+> `d_i = pnl_signal,i − pnl_always_long,i` over the 1,364 decisions.
+
+**Primary metric & threshold**
+> Difference in expectancy per decision, stationary bootstrap, **one-sided `p < 0.05`**,
+> expected block **10**, 10,000 resamples, seed 1337. Sensitivity reported at block 1 and
+> 25 — reported, never selected from. Identical to H-003 §F so the two are comparable.
+
+**A cost divergence that is predictable in advance, and predicted here**
+
+> Swap is direction-asymmetric: 20 points per lot per night long, 8 short. The signal is
+> 56.2% long; always-long is 100% long. **The control will pay more swap than the signal,
+> systematically, in the direction that favours the signal.**
+>
+> Order-of-magnitude estimate from H-003's measured signal swap of 0.000738 R:
+> `0.000738 x 20 / (0.562 x 20 + 0.438 x 8) ≈ 0.0010 R`, a divergence near **0.00026 R**.
+> That is 1.3% of an effect the size of 0.02 R and 13% of an effect the size of 0.002 R.
+>
+> H-003 §K's rule applies unchanged: above a 10% divergence share the floor-insensitivity
+> claim is void, the result says so as a finding, and the breakeven spread of the
+> difference becomes required. Given the estimate above, **this run is materially more
+> likely to void it than H-003 was**, and that is registered now rather than explained
+> later.
+
+**Also reported, not part of the verdict**
+> Always-long's own absolute expectancy; both arms' long share; per-fold results alongside
+> pooled, given the era composition H-006 made visible and H-003's fold-3 reversal;
+> realised cost per component per arm; K-5 doubling.
+
+**Sample size expected**
+> 1,364 decisions, unchanged. K-6 cleared at 9.1x. The multiple does not change the grid.
+
+**Pre-committed interpretation**
+
+> - **Always-long matches or beats the signal** (difference ≤ 0, or > 0 but not at
+>   `p < 0.05`): **the H-003 difference is a long bias and carries no directional
+>   information.** H-003's directional reading is withdrawn — the run stands as a record,
+>   the interpretation does not. Halt the ladder. Return to feature research. Do not build
+>   rung 3, and do not build an agent.
+> - **The signal beats always-long at `p < 0.05`**: the difference survives its most
+>   likely confound, and **rung 3 becomes the question**. Nothing beyond rung 3 is
+>   licensed by this.
+> - **AMBIGUOUS** (the one-sided bootstrap CI straddles zero): **REJECT.** §3's default,
+>   not overridden by a favourable point estimate.
+> - Whatever the outcome, report H-003's BH status under the resulting family (see above).
+
+**Guardrail**
+> Always-long has no parameters, which is the point — there is nothing here to tune. The
+> risk geometry is H-003's and may not be varied inside this run; varying it is H-008,
+> deliberately separate.
+
+---
+
+### H-008 — The 1.5x ATR stop and target: is H-003's difference stable in it?
+
+- **Registered:** 2026-07-28 UTC
+- **Class:** gate — does not count toward `N_claims`
+- **Status:** REGISTERED
+
+**What this is, and why it is a gate rather than a claim**
+
+> H-003 §L classified thirteen cost and geometry constants. Seven are cost constants and
+> the run **measured** that the verdict does not turn on them: cost divergence 0.000030 R
+> against a 0.060398 R effect, and a difference breakeven at 19x the spread floor.
+>
+> One was identified as the exception: **the 1.5x ATR stop and target.** Both arms share
+> it, so it does not bias the comparison — but it fixes the payoff shape of every decision,
+> and the *magnitude* of the difference is a function of it. H-003 measured nothing about
+> it. This is the registration of that measurement.
+>
+> It is a **gate**, not a claim, and the distinction is load-bearing: a gate cannot
+> manufacture a false positive about edge. This one is constructed so that it cannot —
+> **the sweep can only weaken or corroborate an existing result, never select a better
+> configuration.** See the guardrail.
+
+**Why it is registered separately from H-007, and not folded into it**
+
+> Rung 2 tests a confound. This tests robustness. Running them together would mix the two
+> and leave any disagreement unattributable — a difference that moved could be the
+> baseline or the geometry, and nothing in the output would say which.
+>
+> The stronger reason: a sweep run alongside a baseline test invites choosing the
+> multiplier that makes the baseline test pass. That is `RESEARCH.md` §5.2 hypothesis
+> laundering, and separating the runs is what makes it structurally unavailable rather
+> than merely discouraged.
+
+**The sweep — fixed before running**
+
+> | `stop_atr_mult` = `target_atr_mult` | |
+> |---|---|
+> | 0.75 | half the registered value |
+> | 1.00 | |
+> | **1.50** | **the registered value, unchanged** |
+> | 2.00 | |
+> | 3.00 | double the registered value |
+>
+> Five values, bracketing 1.5 by a factor of two either way. **Stop and target stay equal
+> at every point.** H-003 §D registers the symmetry because it is what makes the random
+> control's gross expectancy zero by construction; breaking it would change what is being
+> measured rather than how robustly it is measured.
+>
+> The values are fixed here, before any of them has produced a number. Adding a sixth
+> after seeing the five is a new hypothesis.
+
+**What is run at each point**
+> H-003's run, entire: the same signal probabilities, the same 30 random control arms,
+> the same decision grid, the same cost model, the same bootstrap at block 10. Only the
+> multiple changes.
+
+**A confound inside the sweep, named in advance**
+
+> Position size is `R / (k x ATR)`, so a wider stop takes a smaller position. Cost in R is
+> `cost_points / (k x ATR)` — **cost per R falls as `k` rises.** The difference will tend
+> to grow with `k` for that reason alone, with no change in information content.
+>
+> The run therefore reports **realised cost in R at every swept point** beside the
+> difference. A difference that rises exactly as cost falls is cost dilution and must not
+> be read as robustness.
+
+**Pass conditions — all must hold**
+
+> | # | Condition |
+> |---|---|
+> | i | The difference is **positive at all five** multiples |
+> | ii | At least **three of five** clear one-sided `p < 0.05` at the registered block |
+> | iii | The cost-in-R series is reported beside the difference series at every point |
+>
+> Failure of (i) or (ii) means H-003's difference is a property of one payoff shape rather
+> than of the signal, and H-003's directional reading is **withdrawn** on the same terms
+> as an H-007 failure.
+
+**Reported, and explicitly not a pass condition**
+
+> Whether 1.5 is the argmax of the difference across the five. If it is, the run says so —
+> "the registered value is the best of five, which is what a tuned constant looks like" —
+> and that is a flag for a reader, not a verdict. Making it a failure would build a gate
+> that fires one time in five by luck, and `REPRODUCIBILITY.md` §10 forbids a gate whose
+> firing nobody can attribute in either direction.
+
+**Guardrail — the reason this can be a gate at all**
+
+> **`STOP_ATR_MULT` and `TARGET_ATR_MULT` remain 1.5 whatever the sweep shows.** This run
+> cannot change them. Adopting a different multiple requires a new hypothesis ID and a
+> fresh draw against `N_claims`, and doing it *because* the sweep favoured it is
+> hypothesis laundering under `RESEARCH.md` §5.2 regardless of the reasoning attached.
+>
+> That guardrail is what makes the sweep incapable of manufacturing an edge, and therefore
+> what makes it a gate.
+
+**Pre-committed interpretation**
+
+> - PASS: the H-003 difference is not an artefact of the payoff shape. Its directional
+>   reading survives this axis. Says nothing about the long-bias confound — that is H-007.
+> - FAIL: **withdraw H-003's directional reading.** The run stands as a record; the
+>   interpretation does not. Return to feature research.
+> - Either way, `1.5` stays registered.
+
+**Order**
+> H-007 first. If H-007 fails, H-003's directional reading is already withdrawn and this
+> sweep measures the robustness of something that has been retracted — there is nothing
+> left for it to be about. Run it only if H-007 passes.
+
+<!-- H-009 onward -->
