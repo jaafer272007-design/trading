@@ -67,7 +67,30 @@ def test_index_is_utc_and_strictly_increasing() -> None:
 def test_columns_are_exactly_ohlcv_in_order() -> None:
     df = generate_ohlcv(n_bars=50, seed=1)
 
-    assert list(df.columns) == ["open", "high", "low", "close", "volume"]
+    assert list(df.columns) == [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "tick_volume",
+    ]
+
+
+def test_tick_volume_is_an_exact_copy_of_volume() -> None:
+    """The claim that adding it consumed no PRNG draw, made checkable.
+
+    ``tick_volume`` exists so H-012's volume feature can read the column name
+    the real feed uses without falling back to a substitute. If it were ever
+    given its own draw, every OHLC value downstream would shift and the
+    recorded K-1 sensitivity baseline measured on this generator would stop
+    describing the data it was measured on.
+    """
+    df = generate_ohlcv(n_bars=200, seed=1)
+
+    np.testing.assert_array_equal(
+        df["tick_volume"].to_numpy(), df["volume"].to_numpy()
+    )
 
 
 def test_contains_no_missing_values() -> None:

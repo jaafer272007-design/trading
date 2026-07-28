@@ -40,7 +40,7 @@ import pandas as pd
 # depends on to distinguish a real leak from generator drift.
 _DRAWS_PER_BAR: Final = 4
 
-_COLUMNS: Final = ["open", "high", "low", "close", "volume"]
+_COLUMNS: Final = ["open", "high", "low", "close", "volume", "tick_volume"]
 
 
 def generate_ohlcv(
@@ -65,7 +65,8 @@ def generate_ohlcv(
 
     Returns:
         A frame indexed by timezone-aware UTC open-time timestamps, with
-        columns ``open``, ``high``, ``low``, ``close``, ``volume`` and no
+        columns ``open``, ``high``, ``low``, ``close``, ``volume``,
+        ``tick_volume`` (an exact copy of ``volume``) and no
         missing values.
 
     Raises:
@@ -114,6 +115,12 @@ def generate_ohlcv(
             "low": low,
             "close": close,
             "volume": volume,
+            # An exact copy of `volume`, under the name the real feed uses.
+            # Added for H-012's volume feature, which refuses to fall back to
+            # a differently-named column. It consumes no PRNG draw, so every
+            # OHLC and volume value -- and therefore the recorded K-1
+            # sensitivity baseline measured on this generator -- is unchanged.
+            "tick_volume": volume,
         },
         index=index,
         columns=_COLUMNS,

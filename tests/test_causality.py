@@ -24,22 +24,37 @@ import pytest
 import features
 from data.synthetic import generate_ohlcv
 from features.atr import ATR
+from features.atr_distance import AtrDistance
 from features.base import Feature
+from features.drawdown_from_max import DrawdownFromMax
 from features.log_return import LogReturn
 from features.range_position import RangePosition
 from features.realized_vol import RealizedVol
+from features.reversal import Reversal
+from features.vol_scaled_return import VolScaledReturn
+from features.volume_weighted_return import VolumeWeightedReturn
 from tests.causality import assert_all_causal
 
 SEEDS = (0, 1, 2)
 """Seeds swept. A result on one seed is a result about that seed."""
 
-N_BARS = 600
+N_BARS = 1_400
+"""Long enough for the 480-bar features to clear the 200-bar sweep width."""
 
 FEATURE_REGISTRY: tuple[Feature, ...] = (
     ATR(period=14),
     LogReturn(window=24),
     RealizedVol(window=24),
     RangePosition(window=48),
+    # H-012 §B — seven priors. `log_return_120` and `log_return_480` reuse the
+    # LogReturn class at other windows and need no new module.
+    LogReturn(window=120),
+    LogReturn(window=480),
+    VolScaledReturn(window=120),
+    Reversal(window=4),
+    AtrDistance(window=480, atr_period=14),
+    DrawdownFromMax(window=480),
+    VolumeWeightedReturn(window=24),
 )
 """Every feature that ships.
 
