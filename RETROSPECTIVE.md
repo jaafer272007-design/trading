@@ -3,6 +3,10 @@
 Written after H-007. Extended after H-009 and H-010; every later addition is dated in
 place rather than folded into the original text.
 
+**Superseded in scope by `RETROSPECTIVE-2.md`**, written after H-012, which states what the
+project may assert and at what strength, names what remains untested, and makes the case for
+stopping. This document remains the record of what was measured and how.
+
 **What this project now knows that it did not know before.** Not a summary of what
 happened; a record of what has been established, what has been ruled out, and what is
 still dark. Written while the runs are fresh, before any feature research begins, so that
@@ -540,3 +544,15 @@ is *"never tested, here is why"*, with a pointer to H-011's abandonment block. N
 retrofitted claim that capacity was excluded. **That sentence is the whole reason this
 section exists**, and writing it down now, before the null that would tempt the retrofit,
 is the only time it costs nothing.
+
+> **2026-07-28, after H-012 — correction. The tractability half of the reasoning above was
+> wrong.** H-012 fitted eleven parameters of real features and the frozen thousand-step
+> budget left the gradient at `8.5e-07` to `1.6e-06`: essentially converged. H-010's stall
+> at twenty and thirty-five parameters was a property of the **polynomial basis**, not of
+> parameter count.
+>
+> So "untestable by this route" was true and "expensive to raise capacity" was not.
+> **The abandonment stands on the first ground only — three columns is a very small
+> hypothesis class regardless of what is fitted over it** — and on the anchor argument,
+> both of which H-012 leaves untouched. The obligation above is unchanged: capacity remains
+> untested, and it must not be reported as excluded.
