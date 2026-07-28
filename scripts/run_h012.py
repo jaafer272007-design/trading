@@ -50,7 +50,12 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from run_h001 import FIRST_TEST_FRACTION, N_FOLDS, _fold_geometry
+from run_h001 import (
+    FIRST_TEST_FRACTION,
+    N_FOLDS,
+    _fold_geometry,
+    _snapshot_derived_sha256,
+)
 
 from backtest.metrics import bootstrap_mean
 from data.loader import load_window
@@ -59,7 +64,6 @@ from evaluation.manifest import (
     RunType,
     feature_set_version,
     file_sha256,
-    frame_sha256,
     git_commit,
     git_dirty,
 )
@@ -404,7 +408,7 @@ def main() -> int:
         git_dirty=git_dirty(),
         run_type=RunType.EVALUATION,
         hypothesis_id="H-012",
-        data_snapshot_sha256=frame_sha256(frame),
+        data_snapshot_sha256=_snapshot_derived_sha256(args.snapshot),
         data_window={"start": str(frame.index[0]), "end": str(frame.index[-1])},
         evaluation_mode="walk_forward",
         holdout_openings_remaining=3,
