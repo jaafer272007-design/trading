@@ -314,6 +314,51 @@ def feature_validity(
     return out
 
 
+def trade_window_validity(
+    bar_valid: npt.NDArray[np.bool_], hold_bars: int
+) -> npt.NDArray[np.bool_]:
+    """Propagate bar validity across the window a *trade* occupies.
+
+    The third of these, and the one the label horizon does not cover.
+
+    :func:`label_validity` validates ``[T, T+H]`` because that is what the label
+    reads. A trade reads more: H-003 §D fills at the open of ``T+1`` and times
+    out after ``hold_bars`` bars, so a decision at ``T`` touches bars through
+    ``T + 1 + hold_bars``. With ``H = hold_bars = 24`` that is one bar past the
+    label window, and a decision whose last bar is invalid would be simulated
+    straight across a hole and produce an ordinary-looking result.
+
+    One bar sounds like a rounding error and is not. The bar it adds is the time
+    exit — the bar the position closes on when neither level is touched, which
+    is the most common outcome under a symmetric stop and target.
+
+    Args:
+        bar_valid: Per-bar validity.
+        hold_bars: Bars a position may remain open after entry.
+
+    Returns:
+        Per-bar mask, same length as ``bar_valid``. False where the window runs
+        past the end of the series — a trade that cannot close is not a shorter
+        trade, it is an unfinished one.
+
+    Raises:
+        ValueError: If ``hold_bars`` is not positive.
+    """
+    if hold_bars <= 0:
+        raise ValueError(f"hold_bars must be positive, got {hold_bars}")
+
+    n = len(bar_valid)
+    span = hold_bars + 2
+    out = np.zeros(n, dtype=np.bool_)
+    if n < span:
+        return out
+
+    invalid_prefix = np.concatenate(([0], np.cumsum(~bar_valid)))
+    for i in range(n - span + 1):
+        out[i] = (invalid_prefix[i + span] - invalid_prefix[i]) == 0
+    return out
+
+
 def gap_census(gaps: list[Gap]) -> dict[str, int]:
     """Count gaps by cause, for the snapshot manifest.
 

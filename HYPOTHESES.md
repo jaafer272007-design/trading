@@ -501,6 +501,8 @@ phase.
 - **Registered:** 2026-07-26 14:32 UTC
 - **Operationalisation amended:** 2026-07-28 — before any run, and before the backtest
   engine exists (see §2 rule 1)
+- **Cost constants amended:** 2026-07-28 — still before any run, after the engine was
+  built to §I and introduced constants the specification could not have named (§J–§N)
 - **Class:** claim — counts toward `N_claims`
 - **Status:** REGISTERED
 
@@ -721,6 +723,152 @@ risk management" actually are**
 > *Sharpe* for selection and H-003's metric is expectancy difference; `N_eff` measures
 > agreement among agents and there are no agents. Both are required before any claim that
 > reports a Sharpe or an agent panel, and neither is a reason to delay this run.
+
+---
+
+**Amended again 2026-07-28, still before any run: the constants the engine introduced**
+
+> The first amendment specified H-003 before the engine existed, which was the right
+> order. Building it then introduced constants the specification could not have named —
+> a slippage coefficient, a commission, two swap rates — because a cost model has to be
+> written before anyone knows what is in it. **Those constants are now in the evaluation
+> path and they were not registered.** This block registers them, before the run and
+> before any of them has produced a number.
+>
+> Two of the three findings below came out of building the thing, which is the argument
+> for building it before running rather than after registering.
+
+**J — The trade window is one bar longer than the label window**
+
+> §D fills at the open of `T+1` and times out after 24 bars, so a decision at `T` touches
+> bars through **`T+25`**. H-001's eligibility mask validates `[T, T+24]`. The 25th bar is
+> outside the registered mask, and a decision whose 25th bar is invalid would be simulated
+> straight across a hole and produce an ordinary-looking number.
+>
+> Two further eligibility conditions therefore apply, and are registered here:
+>
+> 1. **`atr_14` valid and finite at the decision bar.** The risk geometry reads a feature
+>    the design matrix does not contain (§A), so its validity is a new condition rather
+>    than one already covered. An ATR averaged across an unexplained gap sets a stop
+>    distance that looks perfectly ordinary.
+> 2. **Every bar in `[T, T+25]` valid.** The traded window, not the labelled one.
+>
+> `[MEASURED]` `scripts/report_h003_setup.py` over the H-001 snapshot:
+>
+> | eligibility | eligible bars | decisions |
+> |---|---|---|
+> | H-001 registered mask | 64,886 | **1,364** |
+> | + `atr_14` valid and finite | 64,886 | **1,364** |
+> | + trade window `[T, T+25]` valid | 64,879 | **1,364** |
+>
+> **The decision count does not change.** Seven bars lose trade-window validity and none
+> of them lands on a grid point. K-6 still clears at 9.1x. That the answer is "no change"
+> is what makes it worth recording: had it been checked after the run instead, the same
+> arithmetic would have been indistinguishable from a rationalisation.
+
+**K — The realised-cost comparison is a first-class output, not a caveat**
+
+> §E argued a partial cost invariance. Building the engine showed the argument was
+> **weaker than §E stated**, and the correction is recorded rather than quietly absorbed:
+>
+> | component | identical across arms? | why |
+> |---|---|---|
+> | entry half-spread | yes | same bar, same multiplier |
+> | entry slippage, entry latency | yes | same ATR, same lots |
+> | commission | yes | same lots, two sides always |
+> | **exit half-spread** | **no** | the arms exit on different bars, and the multiplier is a property of the bar |
+> | **exit latency** | **no** | a limit target pays none; a stop or time exit does |
+> | **swap** | **no** | direction-asymmetric rates *and* different holding lengths |
+> | **gap-through** | **no** | a long and a short gap through different levels |
+>
+> §E said "spread and commission are therefore identical across arms". Only *entry*
+> spread and commission are. Four components provably differ, so the honest question is
+> not whether the costs match but whether the residual divergence is small next to the
+> effect being measured.
+>
+> **Registered rule, with a consequence rather than a caveat.** The run reports realised
+> cost per arm per component, in R, as a first-class section. Let
+> `divergence = |total_cost_signal - total_cost_control|` per decision and `effect` the
+> measured expectancy difference. Then:
+>
+> - `divergence / |effect| <= 0.10` → the floor-insensitivity claim may be made.
+> - `divergence / |effect| > 0.10` → **the claim is void for that run.** The primary
+>   metric *is* a function of H-005's spread floor, the result must say so in the finding
+>   rather than in a footnote, and the **breakeven spread of the difference** is required
+>   alongside the signal arm's own.
+> - A component marked identical-by-construction that is *not* identical → the comparison
+>   is not interpretable at all. That is a defect in the grid or the sizing, not a cost
+>   finding, and the run halts on it.
+>
+> `COST_DIVERGENCE_TOLERANCE = 0.10` is a judgement and is registered as one.
+
+**L — Every cost constant, registered**
+
+> The §10 model needs numbers §10 does not supply. Each is marked by what fixes it:
+> **forced** by a rule with no freedom in it, **derived** from something already
+> registered, or **judgement** — a choice someone made, which is the only category that
+> can be gamed and therefore the only one that matters here.
+>
+> | constant | value | class |
+> |---|---|---|
+> | `SPREAD_FLOOR_POINTS` | 75 points | forced — H-005 (i), raisable only |
+> | `WEEKLY_OPEN_MULTIPLIER` | 3x | forced — §10's stated range, low end |
+> | `SCHEDULED_NEWS_MULTIPLIER` | 10x | forced — §10's stated range, high end |
+> | `WEEKLY_OPEN_BARS` | 3 | judgement |
+> | `SLIPPAGE_ATR_COEFF` | 0.05 of ATR per side | judgement |
+> | slippage size scaling | square root | judgement — standard market-impact form |
+> | `COMMISSION_POINTS_PER_LOT_PER_SIDE` | 3.5 | judgement |
+> | `SWAP_LONG_POINTS_PER_LOT_PER_NIGHT` | 20, charged | judgement |
+> | `SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT` | 8, charged | judgement |
+> | `LATENCY_DEFAULT_SECONDS` | 0.25 | forced — §10 |
+> | `LATENCY_ATR_COEFF_PER_SECOND` | 0.02 | judgement, deliberately small |
+> | `RISK_PER_TRADE` | 100 currency units | derived — the unit R is measured in |
+> | `COST_DIVERGENCE_TOLERANCE` | 0.10 | judgement (§K) |
+>
+> **Swap is charged in both directions.** A credit is an optimistic assumption about a
+> rate this project has never observed, and §10 does not permit one.
+>
+> **The latency coefficient is small on purpose.** At H1 resolution a 250 ms delay is not
+> separately observable, and the material latency assumption is not this term at all — it
+> is the registered rule that a signal on bar `T`'s close fills at bar `T+1`'s open, a
+> delay 14,400x longer. A large coefficient here would be double-counting dressed as
+> conservatism.
+
+**M — What the event model does not reach, as a number**
+
+> §10 says the spread widens 3-10x "around scheduled news and at the weekly open". This
+> project has no economic calendar, so the implemented event set is the weekly open and
+> the payrolls hour, and nothing else.
+>
+> `[MEASURED]`, same run: **1,728 weekly-open bars and 125 payrolls-hour bars, 2.83% of
+> the series.** The other 97.17% is priced at the flat floor, every non-payrolls scheduled
+> release included.
+>
+> That error is **optimistic**, and its direction is stated rather than argued away. Three
+> things bound it: the floor is already 5x the observed demo quote and 2.5-3.6x the
+> broker's own recorded median; the coverage share is printed in every run; and K-5 plus
+> the breakeven spread say how wrong the assumption can be before the result changes sign.
+> None of them is an economic calendar. When one exists, this set widens through a new
+> hypothesis.
+
+**N — Rung extensibility is build-enforced**
+
+> §I requirement 6 said rungs 2-4 must be new direction sources rather than new engines.
+> That is a testable property and it is now tested: `tests/backtest/test_rungs.py`
+> implements all three §2 rungs **against the protocol, from the test module**, and runs
+> them through the unmodified engine. If a rung could only be built by editing the engine,
+> that file would not import.
+>
+> It also guards the other direction. `test_no_rung_has_been_smuggled_into_the_evaluation_path`
+> fails if any of those three appears in `src/backtest/direction.py`, because a rung in
+> the evaluation path is a fast/slow pair or a sizing rule nobody registered. The failure
+> message is the registration conversation.
+>
+> Rung 3 is the one that shaped the design: buy-and-hold has no protective orders, so the
+> lifecycle takes `float | None` stop and target multipliers rather than a large number
+> standing in for "off". Had rungs 2-4 been deferred without this test, that would have
+> been discovered when they were registered, and by then changing the engine would mean
+> re-running everything built on it.
 
 **Dataset & window**
 
