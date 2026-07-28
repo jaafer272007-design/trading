@@ -11,12 +11,22 @@ indices, return one :class:`~backtest.execution.Direction` per decision. It has
 no access to the risk model, the cost model, or the fill logic, so a source
 cannot change them.
 
-Two sources live here — the two H-003 registers. The §2 rungs do not, and their
-absence is the point: rung 4 needs a fast/slow pair, rung 3 needs a sizing rule,
-and both are constants nobody has registered. Putting them in ``src`` would move
-unregistered choices into the evaluation path. ``tests/backtest/test_rungs.py``
-implements all three against this protocol, which is what demonstrates the
-property without asserting the constants.
+What is allowed to live here, and what is not
+----------------------------------------------
+
+**A source may live in ``src`` once a hypothesis registers it, and not before.**
+
+- :class:`LogisticDirection` and :class:`RandomDirection` — H-003 §A and §C.
+- :class:`AlwaysLong` — `EVALUATION.md` §2 rung 2, registered 2026-07-28 as
+  **H-007**. It arrived here by that route: ``tests/backtest/test_rungs.py``
+  refused it until the registration existed, which is what that test is for.
+  It has no parameters, so registering it introduced no constant.
+
+Rungs 3 and 4 are still absent, and their absence is still the point: rung 4
+needs a fast/slow pair and rung 3 needs a sizing rule, and both are constants
+nobody has registered. ``tests/backtest/test_rungs.py`` implements them against
+this protocol from the test module, which demonstrates the extensibility
+property without moving unregistered choices into the evaluation path.
 """
 
 from __future__ import annotations
@@ -151,3 +161,38 @@ class RandomDirection:
         rng = np.random.default_rng(self.seed)
         draws = rng.integers(0, 2, size=len(decisions))
         return tuple(Direction.LONG if d == 1 else Direction.SHORT for d in draws)
+
+
+@dataclass(frozen=True, slots=True)
+class AlwaysLong:
+    """`EVALUATION.md` §2 rung 2, registered as H-007.
+
+    Gold has a secular uptrend across the evaluation window, so any long-biased
+    system looks clever. H-003's signal went long 56.2% of the time against a
+    control that is 50% long by construction, and **a long bias produces H-003's
+    measured difference with zero directional skill**. This arm is the registered
+    instrument for telling the two apart.
+
+    It has no parameters. That is not a convenience — it is why registering it
+    added nothing to the degrees of freedom, and why it can sit in ``src``
+    alongside the H-003 sources rather than in a test module.
+    """
+
+    name: str = "always_long"
+    decision_method: str = "always_long"
+
+    def directions(
+        self, frame: pd.DataFrame, decisions: npt.NDArray[np.int64]
+    ) -> tuple[Direction, ...]:
+        """Long, every time.
+
+        Args:
+            frame: Unused, and unused on purpose — a baseline that looked at
+                prices would not be a baseline.
+            decisions: Decision positions.
+
+        Returns:
+            One direction per decision.
+        """
+        del frame
+        return tuple([Direction.LONG] * len(decisions))
