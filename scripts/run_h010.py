@@ -210,7 +210,10 @@ def main() -> int:
     rules = [r.strip() for r in args.rules.split(",") if r.strip()]
     wanted = {r.strip() for r in args.rungs.split(",") if r.strip()}
     rungs = [r for r in LADDER if r.name in wanted]
-    out = Path(args.out)
+    # Resolved, because the closing report prints it relative to the repo root
+    # and a relative --out would raise there -- after every measurement was
+    # already written, which is a cosmetic crash on top of a complete run.
+    out = Path(args.out).resolve()
 
     started = time.monotonic()
     df = generate_ohlcv(n_bars=N_BARS, seed=DATA_SEED)
