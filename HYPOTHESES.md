@@ -14,9 +14,9 @@
 Registered (registry completeness) ... 8
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
-  ├─ Rejected ....................... 0
+  ├─ Rejected ....................... 1   H-007 (rung 2, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 5
+  └─ In flight ...................... 4
 
 N_claims (multiple-testing denom.) ... N = 3
   ├─ gates  (not counted) ........... 5   H-001, H-002, H-005, H-006, H-008
@@ -27,15 +27,19 @@ FDR correction level ................ α = 0.05, Benjamini–Hochberg
 ```
 
 > **Note on H-003, 2026-07-28 — why it is marked "see note".** Registering H-007 moved
-> `N_claims` from 2 to 3. Under `EVALUATION.md` §9 that moves the Benjamini–Hochberg
-> rank-1 critical value from `0.05 x 1/2 = 0.025` to `0.05 x 1/3 = 0.0167`, and H-003's
-> `p = 0.0204` no longer clears it on its own. BH is a step-up procedure, so H-003
-> recovers if H-007 returns `p ≤ 0.0333`, and does not otherwise.
+> `N_claims` from 2 to 3, which under `EVALUATION.md` §9 moved the Benjamini–Hochberg
+> rank-1 critical value from 0.025 to 0.0167. H-003's `p = 0.0204` stopped clearing on its
+> own, and BH being step-up, its survival became contingent on H-007 returning
+> `p ≤ 0.0333`. That was registered before H-007 ran.
 >
-> **H-003's acceptance is therefore contingent on a run that has not happened.** Recorded
-> here and in H-007 *before* that run rather than after it. This is the correction doing
-> what it exists for: registering another claim weakened an accepted one, visibly, at the
-> moment of registration.
+> **H-007 returned `p = 0.5041`.** BH rejects nothing in the family: H-003 does not clear
+> §9. Separately and more importantly, H-007 measured always-long matching the signal, so
+> **H-003's directional reading is withdrawn** — see the appended block at the end of its
+> entry.
+>
+> `Status: ACCEPTED` is left in place on purpose. The run happened and its arithmetic
+> holds; what failed is the inference drawn from it, and the registry records what was
+> done rather than what is currently believed.
 
 In flight = status REGISTERED or RUNNING.
 
@@ -1053,7 +1057,30 @@ risk management" actually are**
 > PASS. **Proceed to `EVALUATION.md` §2 rung 2** — always-long — which is also the test
 > of this result's leading confound. Not to rungs 3–5, and not to the agent panel.
 
----
+**2026-07-28, after H-007 — the directional reading is withdrawn**
+
+> Appended, not edited: §2 forbids changing an entry after its run, and nothing above this
+> line is altered. The run happened as recorded and its arithmetic is unchanged.
+>
+> **What is withdrawn is the interpretation.** H-007 ran rung 2 on the same 1,364
+> decisions with the same geometry and measured always-long at −0.096150 R against the
+> signal's −0.096292 R — a difference of **−0.000141 R at `p = 0.5041`**. The leading
+> confound this entry named in its own "what this does not say" section turned out to be
+> the whole of the effect.
+>
+> Two consequences, both recorded here because a reader arriving at this entry must not
+> leave it with the wrong impression:
+>
+> 1. **The +0.060398 R against random entry is a long bias.** It is not evidence that the
+>    signal carries directional information. The verdict "K-4 does not trip" stands as a
+>    statement about what was measured; it no longer supports the reading placed on it.
+> 2. **It no longer clears §9.** `N_claims = 3` and H-007 returned `p = 0.5041 > 0.0333`,
+>    so Benjamini–Hochberg rejects nothing in the family. The contingency was registered
+>    before H-007 ran and resolved against.
+>
+> The `Status: ACCEPTED` line above is left alone deliberately. Rewriting it would make
+> the registry a record of what is currently believed rather than of what was done, and
+> the second is the only one of the two that is auditable.
 
 ### H-004 — LLM synthesis vs. deterministic combination (SC-1)
 
@@ -1513,8 +1540,9 @@ becomes an explicit term**
 ### H-007 — Signal beats always-long (`EVALUATION.md` §2 rung 2)
 
 - **Registered:** 2026-07-28 UTC
+- **Executed:** 2026-07-28 on real market data
 - **Class:** claim — counts toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** REJECTED — always-long matches the signal
 
 **Claim**
 > Over H-003's 1,364 decisions and H-003's risk geometry, the signal's expectancy per
@@ -1616,6 +1644,133 @@ becomes an explicit term**
 > Always-long has no parameters, which is the point — there is nothing here to tune. The
 > risk geometry is H-003's and may not be varied inside this run; varying it is H-008,
 > deliberately separate.
+
+--- RUN ---
+
+- **Run manifest:** `runs/ab8dfbcb-c48d-4f2e-ac30-5bd9a7e5c5de.json`
+  sha256 `2f02739ab0a19cc3d6e3160917a53c16a8c91f693efedea63795b40056c82da9`
+- **run_id:** `ab8dfbcb-c48d-4f2e-ac30-5bd9a7e5c5de`
+- **Executed:** 2026-07-28, commit `6189945`, `git_dirty: false`
+- **Data:** the H-003 snapshot and grid, 1,364 decisions, K-6 cleared at 9.1x.
+- **Verdict:** **REJECTED. Always-long matches the signal.**
+
+**The primary test**
+
+> | arm | expectancy R | long | short | long % |
+> |---|---|---|---|---|
+> | signal | **−0.096292** | 767 | 597 | 56.2% |
+> | always-long | **−0.096150** | 1,364 | 0 | 100.0% |
+>
+> | block | mean difference (R) | 95% CI | one-sided p |
+> |---|---|---|---|
+> | 1 (sensitivity) | −0.000141 | [−0.066149, +0.065493] | 0.4942 |
+> | **10 (registered)** | **−0.000141** | **[−0.074192, +0.072810]** | **0.5041** |
+> | 25 (sensitivity) | −0.000141 | [−0.078999, +0.078968] | 0.5053 |
+>
+> **The difference is −0.000141 R — negative, and two orders of magnitude smaller than
+> H-003's +0.060398 R against random entry.** `p = 0.5041`: a coin flip. The sensitivity
+> range does not move it. There is nothing here to interpret.
+
+**It is worse than the net numbers show**
+
+> Always-long paid **0.000727 R more per decision in costs** than the signal. Net, the
+> signal is behind by 0.000141 R. **Gross, it is behind by 0.000868 R** — the cost
+> divergence is the only thing holding the net difference near zero rather than below it.
+>
+> The arm that took no view at all, and paid more to do it, still finished ahead.
+
+**Per fold, alongside pooled**
+
+> | fold | n | signal R | always-long R | difference R | test era |
+> |---|---|---|---|---|---|
+> | 0 | 273 | +0.008234 | −0.174638 | **+0.182872** | 2017-10-07 |
+> | 1 | 273 | −0.113504 | −0.279320 | +0.165816 | straddles |
+> | 2 | 273 | −0.144524 | −0.048115 | −0.096409 | 2022-10-21 |
+> | 3 | 273 | −0.195886 | +0.023129 | **−0.219015** | 2022-10-21 |
+> | 4 | 272 | −0.035555 | −0.001460 | −0.034096 | 2022-10-21 |
+> | pooled | 1,364 | −0.096292 | −0.096150 | **−0.000141** | — |
+>
+> The same shape H-003 showed against random entry, and now with the sign flipping in the
+> middle: the signal is ahead in folds 0 and 1 and behind in 2, 3 and 4. **Whatever it
+> had was in the pre-2022 period, and the pooled figure is two opposite regimes cancelling
+> — not a stable small effect.**
+
+**Realised cost per arm, per decision, in R**
+
+> | component | signal | always-long | divergence |
+> |---|---|---|---|
+> | spread | 0.101342 | 0.101851 | **0.000509** |
+> | slippage | 0.021793 | 0.021793 | 0.000000 |
+> | latency | 0.005059 | 0.005056 | 0.000002 |
+> | commission | 0.001121 | 0.001121 | 0.000000 (identical by construction) |
+> | swap | 0.000738 | 0.000959 | **0.000221** |
+> | **total** | **0.130053** | **0.130780** | **0.000727** |
+>
+> **The registered prediction, scored.** §H-007 predicted a swap divergence of
+> **0.00026 R**; measured **0.000221 R** — right sign, right mechanism, right order,
+> about 15% over.
+>
+> **The prediction was also incomplete, and that is the more useful half.** The dominant
+> divergence was not swap but **spread, at 0.000509 R — 2.3x the swap term.** H-003 §K
+> names exit half-spread as a component that cannot be identical across arms, because the
+> arms exit on different bars and the event multiplier belongs to the bar. That mechanism
+> was registered; what was not registered was that it would dominate. A prediction that
+> names one term and misses the larger one is half right and is recorded as such.
+>
+> **Cost invariance: VOID.** Divergence is 514.5% of the measured effect. That ratio is
+> not "five times too large" in any useful sense — the denominator is a difference
+> indistinguishable from zero. The honest reading is **the arms' cost difference is larger
+> than the effect being measured**, which is another way of saying there is no effect.
+
+**Breakeven spread — and a defect in how it was first reported**
+
+> **There is none.** The difference changes sign three times across the bracket:
+>
+> ```
+> 0:+0.000550  250:+0.019471  500:-0.003999  750:-0.006078  1000:+0.002790
+> 1250:-0.016436  1500:-0.010511  1750:-0.012971  2000:-0.003477
+> ```
+>
+> This is what a quantity indistinguishable from zero looks like when the spread floor
+> moves and reshuffles which bar each position exits on.
+>
+> **The first execution of this run reported "1,076.2 points, bracketed to within 3.9".**
+> That was a real crossing and a meaningless number, stated with a precision the quantity
+> does not have. `solve_breakeven_spread` bisected a non-monotone curve. It now probes a
+> nine-point grid first and refuses when the sign changes more than once, with the samples
+> in the message so a reader sees the oscillation rather than taking the refusal on trust
+> (commit `6189945`, `tests/backtest/test_metrics.py`). The run above is the re-execution
+> under the fixed solver; every other number is identical.
+>
+> The verdict never depended on it. It is recorded because a reporting instrument that
+> manufactures false precision is a defect whether or not it changed a conclusion this
+> time.
+
+**K-5**
+
+> Doubled costs: **+0.010961 R**, 95% CI [−0.060060, +0.081631], `p = 0.3853`. Not
+> significant in either direction. Nothing to trip.
+
+**§9 — what this does to H-003**
+
+> `p = 0.5041 > 0.0333`. Under Benjamini–Hochberg at `N_claims = 3`, `k = 0`:
+> **neither claim clears the correction.** H-003's `p = 0.0204` does not survive the
+> enlarged family.
+>
+> This was registered before the run, with the threshold stated, precisely so it could not
+> be presented afterwards as a discovery. It resolved the unfavourable way.
+
+**Pre-committed action taken**
+
+> **Always-long matched the signal. The H-003 difference is a long bias and carries no
+> directional information.** H-003's directional reading is **withdrawn** — the run stands
+> as a record, the interpretation does not.
+>
+> Halt the ladder. **Do not build rung 3. Do not build an agent.** Return to feature
+> research.
+>
+> H-008 is not run: its own Order clause makes it conditional on this passing, and a
+> robustness sweep of a retracted reading measures nothing.
 
 ---
 
@@ -1727,5 +1882,14 @@ becomes an explicit term**
 > H-007 first. If H-007 fails, H-003's directional reading is already withdrawn and this
 > sweep measures the robustness of something that has been retracted — there is nothing
 > left for it to be about. Run it only if H-007 passes.
+
+**2026-07-28 — not run, and not to be run as things stand**
+
+> H-007 was rejected: always-long matched the signal at `p = 0.5041`, and H-003's
+> directional reading is withdrawn. The Order clause above is therefore active. This gate
+> stays `REGISTERED` and unexecuted — the sweep values remain fixed at 0.75, 1.0, 1.5,
+> 2.0, 3.0 for whenever there is a directional reading to test the robustness of.
+>
+> It is not marked `VOID`. Nothing about it was invalidated; its subject was.
 
 <!-- H-009 onward -->
