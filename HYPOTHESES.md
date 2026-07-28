@@ -1943,11 +1943,43 @@ becomes an explicit term**
 > same standardiser, same eligibility construction.
 >
 > Files added: `src/labels/volatility.py`, `tests/labels/test_volatility.py`,
-> `scripts/run_h009.py`. One accessor added to `src/models/logistic.py`
-> (`coefficients`, read-only, no arithmetic change) so §G can be reported.
+> `scripts/run_h009.py`. **Nothing under `src/` is modified.**
 >
 > **No feature is added, changed, or removed.** This is what makes the run cheap: no new
 > causal-test burden under `CLAUDE.md` Hard Rule 1, because no new feature exists.
+
+> **Amendment, 2026-07-28 13:41 UTC — before the run, and made because a guard fired.**
+>
+> This section first read "one accessor added to `src/models/logistic.py`
+> (`coefficients`, read-only, no arithmetic change) so §G can be reported." That accessor
+> was written, and `tests/evaluation/test_sensitivity.py` failed:
+> `combiner_fingerprint()` moved from `9b09e248…` to `666d3ff7…`.
+>
+> The guard is correct and its firing is not a false positive to be waved through. K-1's
+> sensitivity baseline — which leak modes trip at four parameters — is a property of the
+> combiner, and `REPRODUCIBILITY.md` §6 makes any combiner change without a recorded
+> re-measurement invalidate every subsequent K-1 pass. The fingerprint is an AST hash
+> precisely so it cannot be argued down as "only a comment".
+>
+> There were three available responses and only one of them is honest:
+>
+> | response | verdict |
+> |---|---|
+> | bump `RECORDED_COMBINER_FINGERPRINT` | **no.** `sensitivity.py` names this as "the exact defect §6 prohibits" |
+> | re-run the harness-validation sweep and re-record | legitimate, but it spends a run to enable a diagnostic readout |
+> | **do not change the combiner** | **taken** |
+>
+> §G's prediction is unchanged in substance. What changed is how it is read: instead of
+> the raw weight, the run probes the *fitted model's response* — the change in predicted
+> probability from a one-SD step in `realized_vol_24` with the other standardised features
+> held at zero. The sigmoid is monotone in the linear predictor, so the sign of that
+> response is the sign of the coefficient, and the magnitude is in probability units rather
+> than in units of a standardised weight.
+>
+> The behavioural probe is the better instrument on its own merits under `EVALUATION.md`
+> §14: it interrogates the fitted model from outside rather than reading its internals.
+> That it is also the reading that leaves the guard intact is the point being recorded —
+> **the guard changed the design rather than being adjusted to permit it.**
 
 #### §B. The label — `vol_above_median_24`
 
@@ -2081,14 +2113,17 @@ becomes an explicit term**
 > the H-008 precedent, neither is a pass condition: making a surprising-but-legitimate
 > mechanism a failure builds a gate that fires on correctness.
 >
-> **(i) The sign of the `realized_vol_24` coefficient will be positive**, in every fold.
-> Volatility persists, so high current volatility should raise the probability that forward
-> volatility exceeds the six-week median. This is checked by a route that shares nothing
-> with the BSS computation — a deliberate application of §14, since a self-check that shares
-> the assumption is what let three of five prior defects through.
+> **(i) The fitted model's response to `realized_vol_24` will be positive**, in every fold.
+> Volatility persists, so high current volatility should raise the predicted probability
+> that forward volatility exceeds the six-week median. Measured as the change in predicted
+> probability from a one-SD step in `realized_vol_24` with the other standardised features
+> held at zero — a route that shares nothing with the BSS computation, which is a deliberate
+> application of §14, since a self-check that shares the assumption is what let three of
+> five prior defects through. (See §A's amendment for why this is the probe rather than the
+> raw coefficient.)
 >
-> > A high BSS with a **negative** coefficient is a flag: it means the model is winning for
-> > a reason opposite to the registered mechanism, and the PASS must not be acted on until
+> > A high BSS with a **negative** response is a flag: it means the model is winning for a
+> > reason opposite to the registered mechanism, and the PASS must not be acted on until
 > > that is explained. Flag, not verdict.
 >
 > **(ii) `realized_vol_24` alone will account for most of the skill.** A single-feature
