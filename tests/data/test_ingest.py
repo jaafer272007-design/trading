@@ -22,6 +22,7 @@ from data.classify import (
     feature_validity,
     gap_census,
     label_validity,
+    trade_window_validity,
 )
 from data.loader import LoaderError, load_full_snapshot, load_window
 from data.snapshot import (
@@ -418,3 +419,42 @@ def test_dropping_invalid_rows_would_hide_the_hole() -> None:
     # defect is real, and only the mask makes it visible.
     assert len(closed_up) < len(kept)
     assert not np.array_equal(kept[8:12], closed_up[8:12])
+
+
+def test_the_trade_window_reaches_one_bar_past_the_label_window() -> None:
+    """A trade reads one bar more than a label of the same horizon.
+
+    H-003 §J. A trade fills at ``T+1`` and holds ``hold_bars`` bars, so it
+    reads ``[T, T+1+hold_bars]``.
+
+    Written as a comparison against ``label_validity`` because the two are a
+    single bar apart, which is exactly the size of error that survives review.
+    """
+    valid = np.ones(60, dtype=np.bool_)
+    valid[30] = False
+
+    labels = label_validity(valid, horizon_bars=24)
+    trades = trade_window_validity(valid, hold_bars=24)
+
+    # A decision at 5 reads bars 5..30 as a trade and 5..29 as a label. The
+    # hole at 30 is inside the trade window and outside the label window.
+    assert labels[5]
+    assert not trades[5]
+    # A decision at 4 reads 4..29 as a trade: clear of the hole either way.
+    assert labels[4]
+    assert trades[4]
+
+
+def test_a_trade_that_cannot_close_inside_the_series_is_invalid() -> None:
+    """Not a shorter trade. An unfinished one."""
+    got = trade_window_validity(np.ones(30, dtype=np.bool_), hold_bars=24)
+
+    # A decision at 4 enters at 5 and exits at 29, the last bar there is.
+    assert got[:5].all()
+    assert not got[5:].any(), "positions 5 onward need bars past the series"
+    assert not trade_window_validity(np.ones(10, dtype=np.bool_), hold_bars=24).any()
+
+
+def test_a_non_positive_hold_is_refused() -> None:
+    with pytest.raises(ValueError, match="hold_bars must be positive"):
+        trade_window_validity(np.ones(30, dtype=np.bool_), hold_bars=0)
