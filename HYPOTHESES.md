@@ -1939,7 +1939,11 @@ becomes an explicit term**
 
 - **Registered:** 2026-07-28 13:02 UTC
 - **Class:** claim — counts toward `N_claims`, taking it **3 → 4**
-- **Status:** REGISTERED
+- **Status:** **REJECTED** — `BSS +0.024157 < 0.05`. The mechanism is confirmed and the
+  magnitude is not. (Corrected 2026-07-28 at close-out: this line still read `REGISTERED`
+  after the run. The verdict was always in the run block and in §0's counters; the header
+  disagreed with both, which is exactly what a reader skimming for status would have been
+  misled by.)
 
 **Why this exists, stated first because it determines how a failure is read**
 
@@ -3193,7 +3197,9 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 
 - **Registered:** 2026-07-28 UTC
 - **Class:** **claim** — counts toward `N_claims`, taking it **5 → 6**
-- **Status:** REGISTERED
+- **Status:** **REJECTED** — all four no-conditions hold, at every horizon.
+  (Corrected 2026-07-28 at close-out, same defect as H-009's: the header was never
+  updated after the run.)
 
 **Claim**
 
