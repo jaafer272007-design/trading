@@ -88,9 +88,7 @@ def test_tick_volume_is_an_exact_copy_of_volume() -> None:
     """
     df = generate_ohlcv(n_bars=200, seed=1)
 
-    np.testing.assert_array_equal(
-        df["tick_volume"].to_numpy(), df["volume"].to_numpy()
-    )
+    np.testing.assert_array_equal(df["tick_volume"].to_numpy(), df["volume"].to_numpy())
 
 
 def test_contains_no_missing_values() -> None:

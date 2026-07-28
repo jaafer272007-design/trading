@@ -14,11 +14,12 @@
 Registered (registry completeness) ... 12
   ├─ Accepted ....................... 2   H-001 (K-1, 2026-07-27)
   │                                       H-003 (K-4, 2026-07-28) — see note
-  ├─ Rejected ....................... 3   H-007 (rung 2, 2026-07-28)
+  ├─ Rejected ....................... 4   H-007 (rung 2, 2026-07-28)
   │                                       H-009 (volatility, 2026-07-28)
   │                                       H-010 (capacity gate, 2026-07-28)
+  │                                       H-012 (feature slice, 2026-07-28)
   ├─ Standing ....................... 1
-  └─ In flight ...................... 6
+  └─ In flight ...................... 5
 
 N_claims (multiple-testing denom.) ... N = 6
   ├─ gates  (not counted) ........... 6   H-001, H-002, H-005, H-006, H-008, H-010
@@ -3396,5 +3397,135 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 > - **AMBIGUOUS:** default REJECT, per §3 of the template.
 > - **VOID:** if the capability test fails, or a fit does not converge, or K-1 does not
 >   clear at 11 parameters. A non-result is not a negative result.
+
+--- RUN ---
+
+- **Run manifest:** `runs/bd93b544-49c2-42fc-a349-8fa89a7c0cf5.json`
+  sha256 `49938ebe120a7a794192f3258370df724c0678f4995889ed5d624037997358ed`
+- **run_id:** `bd93b544-49c2-42fc-a349-8fa89a7c0cf5`
+- **Executed:** 2026-07-28, commit `9653124`, `git_dirty: false`
+- **Registration precedes the code:** registration `64141a7`, implementation `070718f`,
+  manifest fix `9653124`. §2 rule 1 satisfied.
+- **Data:** snapshot `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`,
+  65,395 in-window bars. Rows: `runs/h012_feature_slice.json`.
+- **Determinism:** an earlier execution of the same code produced bit-identical arm
+  results; only the manifest step differed. Tier A.
+- **Verdict:** **REJECTED. All four no-conditions hold. The answer is no for this feature
+  set at these horizons.**
+
+**The primary test**
+
+> | horizon | n | base rate | baseline BSS (4 param) | full BSS (11 param) | ΔBrier | `p` at block 10 |
+> |---|---:|---:|---:|---:|---:|---:|
+> | 4 | 8,127 | 0.517288 | +0.001851 | **+0.001848** | −0.00000066 | **0.5001** |
+> | 24 | 1,356 | 0.536873 | −0.006757 | **−0.004939** | +0.00045190 | **0.3599** |
+> | 120 | 272 | 0.555147 | +0.000977 | **+0.003015** | +0.00050325 | **0.4198** |
+>
+> Block sensitivity, one-sided `p` at blocks 1 / 10 / 25: `0.5024 / 0.5001 / 0.4990` at
+> `H = 4`, `0.3846 / 0.3599 / 0.3538` at `H = 24`, `0.4401 / 0.4198 / 0.4021` at `H = 120`.
+> **The verdict does not turn on the nuisance parameter at any horizon.**
+
+**The four no-conditions, individually**
+
+> | # | condition | holds? | measured |
+> |---|---|---|---|
+> | i | magnitude — BSS does not clear `+0.010` | **HOLDS** | best full-set BSS is `+0.003015`, a third of the floor. The best *ablation* arm anywhere is `+log_return_480` at `H = 120`, `BSS +0.007025` — still short, and at the horizon §C makes unreportable per fold. |
+> | ii | sign — improvement not distinguishable from zero | **HOLDS** | `p = 0.5001`, `0.3599`, `0.4198`. The threshold is `0.00833`. Not close at any horizon or any block. |
+> | iii | horizon — fails at every registered horizon | **HOLDS** | all three. |
+> | iv | attribution — nothing surviving always-long | **HOLDS, VACUOUSLY** | **nothing cleared (i) and (ii), so §E's comparison was never reached.** This is recorded as vacuous rather than as a pass: no arm was tested against always-long and survived, because no arm qualified for the test. |
+>
+> Stating (iv) as vacuous matters. "Attribution held" and "attribution was never tested"
+> are different claims, and only the second is true.
+
+**What the always-long numbers show anyway — reported though (iv) was not reached**
+
+> | horizon | base rate | baseline long share | full long share | baseline accuracy | full accuracy |
+> |---|---:|---:|---:|---:|---:|
+> | 4 | 0.5173 | 0.4991 | 0.5428 | 0.5337 | 0.5321 |
+> | 24 | 0.5369 | 0.5575 | 0.6209 | **0.5354** | 0.5398 |
+> | 120 | 0.5551 | **0.9265** | 0.7574 | **0.5478** | 0.5625 |
+>
+> Always-long's accuracy *is* the base rate. **At `H = 24` and `H = 120` the baseline's
+> directional accuracy is below it** — `0.5354` against `0.5369`, and `0.5478` against
+> `0.5551`. The three-feature model is worse than calling the majority class every time.
+>
+> At `H = 120` the baseline calls long on **92.65%** of decisions. That is H-007's confound
+> in probability space and larger than H-003's 56.2%. Adding seven features moves it to
+> 75.74% and buys `+0.0074` of accuracy — a real move, and one that arrives with a
+> `p` of `0.4198`.
+
+**Per fold — and the thing `H = 120` cannot show**
+
+> | horizon | per-fold BSS, full set |
+> |---|---|
+> | 4 | `+0.041436, +0.004709, −0.009625, −0.028047, −0.007495` |
+> | 24 | `+0.048762, +0.012931, −0.042581, −0.042214, −0.014213` |
+> | 120 | *(not reportable — every fold below K-6)* |
+>
+> **At both reportable horizons the sign flips and the decline is monotone through fold 3.**
+> Positive in folds 0 and 1, negative in folds 2, 3 and 4 — the same shape H-003 showed and
+> H-007 explained. The pooled figure is two opposing regimes cancelling, not a small stable
+> effect, and this is visible only because per-fold reporting exists at these horizons.
+>
+> **At `H = 120` it is invisible, exactly as §C pre-committed.** Its pooled `+0.003015`
+> could be either shape and no available diagnostic distinguishes them. §C's clause is
+> therefore not hypothetical: had `H = 120` cleared, it would have cleared as the one
+> horizon whose structure cannot be examined.
+
+**K-1 re-measurement at eleven parameters — the guard fired and the gate cleared**
+
+> | horizon | mode | p | mean BSS | max | CI upper | K-1 |
+> |---|---|---:|---:|---:|---:|---|
+> | 4 | `none` | 11 | −0.000477 | +0.000176 | −0.000349 | **PASS** |
+> | 24 | `none` | 11 | −0.001231 | +0.000921 | −0.000817 | **PASS** |
+> | 120 | `none` | 11 | −0.002920 | +0.002537 | −0.001582 | **PASS** |
+> | 4 / 24 / 120 | `label_in_features` | 12 | +0.999984 / +0.999984 / +0.999983 | | | **trips, as required** |
+>
+> The capability test passes at every horizon: the combiner detects a planted label. The
+> null at 11 parameters sits between H-010's measurements at 7 (`−0.001754`) and 10
+> (`−0.001850`) for the shorter horizons and below both at `H = 120`, where n is smallest.
+
+**Convergence — and a contrast with H-010 worth recording**
+
+> Worst gradient infinity-norm across folds, at the registered frozen 1,000 iterations:
+>
+> | | 4-parameter baseline | 11-parameter full set |
+> |---|---:|---:|
+> | H = 4 | `1.19e-16` | `8.53e-07` |
+> | H = 24 | `3.29e-16` | `1.60e-06` |
+> | H = 120 | `3.41e-17` | `7.49e-07` |
+>
+> **Eleven parameters of real features are essentially converged at a thousand steps.** Two
+> of three are inside H-011's `1e-6` tolerance and the third misses it by 60%.
+>
+> Contrast H-010: at twenty parameters of *polynomial* design the same budget left the
+> gradient at `2.4e-04`, and at thirty-five it stalled at `0.15`. **The optimiser problem
+> H-010 hit was a property of the polynomial basis, not of parameter count.** A design
+> matrix of genuinely different measurements is well-conditioned where a basis expansion of
+> three columns is not. That is a useful thing to know and neither hypothesis predicted it.
+
+**§9 — the family after this run**
+
+> `N_claims = 6`. Available `p`: `0.0150` (H-009), `0.0204` (H-003), `0.4198` (H-012, best
+> across horizons), `0.5041` (H-007). Critical values `0.00833, 0.01667, 0.025, 0.0333,
+> 0.0417, 0.05`. Step-up finds `k = 2`: `0.0204 <= 0.025`. **H-009 and H-003 continue to
+> clear §9 and H-012 does not**, exactly as §J computed before the run.
+
+**Notes**
+
+> - The `n` differs slightly from the geometry report (8,127 / 1,356 / 272 against
+>   8,175 / 1,364 / 274). Eligibility is computed once from the **ten**-feature design so
+>   every arm decides on identical rows; the 480-bar lookbacks disqualify a few more bars
+>   near gaps. The baseline's `H = 24` BSS is `−0.006757` here against H-001's `−0.006766`
+>   on 1,364 rows — the same quantity on 8 fewer decisions, not a discrepancy.
+> - `reversal_4` is exactly `−log_return_4` and a linear combiner cannot distinguish them.
+>   Its arm is therefore a test of the 4-bar return, and it is the **worst** ablation arm at
+>   `H = 4` (`BSS +0.000838`, `p = 0.9296`). The prior was stated; it did not survive.
+> - §D's clause was not triggered: `volume_weighted_return_24` is the weakest arm at
+>   `H = 4` (`p = 0.9984`) and near-weakest at `H = 24`. No second feed is required, because
+>   there is nothing to reproduce.
+> - No cost model, no trade, no baseline ladder, no holdout. `EVALUATION.md` §2's ladder
+>   remains halted at rung 2.
+> - Any new idea in this block becomes a **new hypothesis**, not an amendment to this one.
 
 <!-- H-013 onward -->
