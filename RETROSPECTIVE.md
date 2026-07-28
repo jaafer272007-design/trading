@@ -514,3 +514,29 @@ result. It has not been scored, because the run that would have scored it did no
 **The honest one-line summary, for anyone quoting this later:** *the project tried to test
 whether four parameters were the binding constraint, and discovered instead that its
 optimiser cannot fit the design it chose to test with.*
+
+### 7.1 Abandoned, 2026-07-28 — and what that obliges
+
+The capacity question is **abandoned, not answered**. H-011 stays `REGISTERED` and unrun;
+its `N_claims` draw stands. The full record is the dated block at the end of H-011's entry.
+
+A second-order solver would have made it executable — IRLS already converges the rungs
+gradient descent stalls on. It was rejected on three grounds, and the third is the one that
+decided it:
+
+- Three columns is a very small hypothesis class regardless of what is fitted over it.
+- The remaining value was **political, not epistemic**: pre-empting the "your combiner was
+  too small" objection is not evidence.
+- **It would have spent an independent anchor.** IRLS is external precisely because it lives
+  in `tests/` and `src/` never imports it. Promote it and the frozen gradient path becomes
+  the reference instead. §4.8 records that four of seven instrument defects had a self-check
+  agreeing with them because it shared their assumption. **Independent anchors are the
+  scarcest thing this project has**, and the one question they should never be spent on is
+  one whose answer is already expected.
+
+**The obligation this creates.** When the feature slice returns — and if it returns a null —
+the combiner-size objection will be available and it will be legitimate. The honest response
+is *"never tested, here is why"*, with a pointer to H-011's abandonment block. Not a
+retrofitted claim that capacity was excluded. **That sentence is the whole reason this
+section exists**, and writing it down now, before the null that would tempt the retrofit,
+is the only time it costs nothing.

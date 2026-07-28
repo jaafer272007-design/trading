@@ -3105,4 +3105,54 @@ threshold. H-011 registers three statements, three metrics, three thresholds.
 > probability-quality hypothesis measured on `EVALUATION.md` §3, no cost model is involved,
 > and no rung of §2's ladder is touched. **The ladder is still halted at rung 2.**
 
+**2026-07-28 — ABANDONED. Not answered. Status stays `REGISTERED`.**
+
+> The capacity question is abandoned as a line of inquiry. This block records that it was
+> abandoned, why, and what remains untested, because the failure mode it guards against is
+> a later reader collapsing "abandoned" into "excluded".
+>
+> **Capacity remains untested.** H-011's three pre-committed statements — magnitude, sign,
+> attribution — were never evaluated. No number exists. If a later feature sweep returns a
+> null and someone raises the combiner-size objection, **the honest response is that it was
+> never tested, and this is why.** A retrofitted claim that capacity was excluded would be
+> false.
+>
+> **What made it unanswerable by this route.** H-010 measured that the registered
+> convergence rule is unreachable at C-3, C-4 and C-5 — the Gram condition number of the
+> polynomial design rises `1.21e+01` to `2.87e+10` across the ladder and first-order descent
+> stalls — and unaffordable on the capability fixture at every rung including C-0, where
+> separability costs 426,723 iterations against 314 at identical conditioning. H-011's
+> primary rung under its primary rule is not executable.
+>
+> **Why it is abandoned rather than re-registered with a second-order solver.** Three
+> reasons, in the order they weigh:
+>
+> 1. **Three columns is a very small hypothesis class regardless of what is fitted over it.**
+>    A larger function class over the same three features is a narrow question, and both
+>    H-011's own registered prediction and H-009's positive control — four parameters
+>    extracting `BSS +0.024157` at `p = 0.0150` on the volatility label — point to a null.
+> 2. **Its remaining value was political, not epistemic.** The case for running it was that
+>    a null would remove the "your combiner was too small" objection before a feature sweep
+>    raised it. Pre-empting an objection is not evidence, and it does not justify a
+>    registration and a gate.
+> 3. **It would have spent an independent anchor.** The IRLS solver is currently in
+>    ``tests/`` and never imported by ``src``, which is what makes it an *external*
+>    reference under `EVALUATION.md` §14. Promoting it into the production path inverts its
+>    role: the frozen gradient path becomes the reference instead, and the second-order
+>    anchor is gone. Five instrument defects have been found in this project and **three had
+>    a self-check that agreed with them because it shared their assumption.** Independent
+>    anchors are the scarcest resource here, and spending one on a question whose answer is
+>    already expected is the worst available trade.
+>
+> **`N_claims` is unchanged at 5.** H-011's draw stands. That is the cost of having
+> registered it, and the registry records what was done rather than what was completed —
+> the same principle under which H-003 keeps `Status: ACCEPTED` for a reading that has been
+> withdrawn. Abandoning a hypothesis does not refund its draw; if it did, the denominator
+> would be a record of successes.
+>
+> **What the next slice must not do.** It must not cite this entry as evidence about
+> capacity in either direction, and it must not quietly widen the feature set *and* the
+> combiner at once — the confound H-011 existed to remove is still there, unremoved, and
+> now known to be unremovable cheaply.
+
 <!-- H-012 onward -->
