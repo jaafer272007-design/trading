@@ -1,0 +1,21 @@
+[
+  {
+    "rung": "C-0",
+    "rule": "convergent",
+    "declared_parameters": 4,
+    "fitted_parameters": 4,
+    "estimator": "models.convergent.ConvergentLogisticRegression",
+    "leak": "none",
+    "mean_bss": -0.0013894518790224,
+    "median_bss": -0.0010120404920820336,
+    "max_bss": 0.0022371285338504965,
+    "ci_lower": -0.0023452539284221944,
+    "ci_upper": -0.0006048298962978674,
+    "classification": "silent",
+    "k1_passed": true,
+    "n_decisions": 834,
+    "converged": true,
+    "worst_gradient_norm": 9.998927934186763e-07,
+    "seconds": 13.105
+  }
+]

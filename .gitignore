@@ -18,7 +18,11 @@ data/snapshots/
 __pycache__/
 *.pyc
 .env
-runs/
+# runs/ is deliberately NOT ignored. REPRODUCIBILITY.md Sec 8 requires run
+# manifests, decision logs and result files retained for the project's life.
+# While this line read `runs/`, five manifests referenced by sha256 in
+# HYPOTHESES.md lived outside version control and one became unrecoverable.
+# tests/evaluation/test_archive.py fails the build if it is re-added.
 logs/
 
 # Build / tooling artifacts

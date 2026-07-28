@@ -1,0 +1,50 @@
+[
+  {
+    "bss_synthetic_true_labels": -0.004894483298423902,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-0",
+    "rule": "frozen"
+  },
+  {
+    "bss_synthetic_true_labels": -0.008812544512589948,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-1",
+    "rule": "frozen"
+  },
+  {
+    "bss_synthetic_true_labels": -0.011589231897002117,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-2",
+    "rule": "frozen"
+  },
+  {
+    "bss_synthetic_true_labels": -0.009606799659666265,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-3",
+    "rule": "frozen"
+  },
+  {
+    "bss_synthetic_true_labels": -0.1255641335814386,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-4",
+    "rule": "frozen"
+  },
+  {
+    "bss_synthetic_true_labels": -0.352253087166539,
+    "converged": null,
+    "worst_gradient_norm": null,
+    "iterations": null,
+    "rung": "C-5",
+    "rule": "frozen"
+  }
+]
