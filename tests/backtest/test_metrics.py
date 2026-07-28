@@ -136,3 +136,30 @@ def test_an_edge_surviving_the_bracket_is_reported_as_such() -> None:
 def test_an_empty_bracket_is_refused() -> None:
     with pytest.raises(ValueError, match="empty bracket"):
         solve_breakeven_spread(lambda spread: 1.0, low=100.0, high=100.0)
+    with pytest.raises(ValueError, match="probe_points must be at least 2"):
+        solve_breakeven_spread(lambda spread: 1.0, probe_points=1)
+
+
+def test_a_curve_that_changes_sign_repeatedly_has_no_breakeven() -> None:
+    """The H-007 case. Bisection on this returns a real crossing that means nothing.
+
+    A difference that is indistinguishable from zero oscillates as the spread
+    moves exit bars around. Reporting one of its crossings as "the breakeven,
+    bracketed to within 3.9 points" states a precision the quantity does not
+    have.
+    """
+    result = solve_breakeven_spread(
+        lambda spread: np.sin(spread / 100.0), low=0.0, high=2000.0
+    )
+
+    assert result.points is None
+    assert "no breakeven" in result.note
+    assert "changes sign" in result.note
+    # The samples are in the note, so a reader can see the oscillation rather
+    # than take the refusal on trust.
+    assert "0:" in result.note
+
+
+def test_the_probe_does_not_reject_a_single_clean_crossing() -> None:
+    result = solve_breakeven_spread(lambda spread: 0.5 - spread / 200.0)
+    assert result.points == pytest.approx(100.0, abs=1.0)

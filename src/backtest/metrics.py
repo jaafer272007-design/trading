@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import pairwise
+from typing import Final
 
 import numpy as np
 import numpy.typing as npt
@@ -185,6 +187,12 @@ class BreakevenSpread:
     note: str
 
 
+#: Points at which the curve is sampled before bisecting, to find out whether
+#: bisection is a legitimate thing to do to it. Nine is enough to catch the
+#: oscillation H-007 exhibited and cheap enough to run every time.
+MONOTONICITY_PROBE_POINTS: Final = 9
+
+
 def solve_breakeven_spread(
     evaluate: Callable[[float], float],
     *,
@@ -192,8 +200,9 @@ def solve_breakeven_spread(
     high: float = 2000.0,
     tolerance_points: float = 1.0,
     max_iterations: int = 40,
+    probe_points: int = MONOTONICITY_PROBE_POINTS,
 ) -> BreakevenSpread:
-    """Find the spread floor at which expectancy reaches zero.
+    """Find the spread floor at which expectancy reaches zero, if there is one.
 
     H-005 (ii): "every result reported while this gate is open must state the
     breakeven spread". The point of the requirement is to turn an argument about
@@ -202,11 +211,22 @@ def solve_breakeven_spread(
 
     Solved by re-simulation rather than by algebra. A wider spread does not just
     subtract a constant: it moves the executable price, which moves the trigger,
-    which changes *which* bar a position exits on. The relationship is therefore
-    not exactly linear and not guaranteed monotone, and bisection is used with
-    that stated rather than assumed — the returned object carries the expectancy
-    at both ends of the bracket so a reader can see the sign change the search
-    relied on.
+    which changes *which* bar a position exits on.
+
+    Why this probes before it bisects
+    ---------------------------------
+
+    Bisection assumes one sign change. This curve is not guaranteed to have one,
+    and **H-007 is the case that proved it**: the paired difference measured
+    ``+0.00055`` at a zero floor, ``-0.00014`` at 75, ``+0.0107`` at 150,
+    ``-0.0040`` at 500, ``+0.0028`` at 1000 — noise oscillating around zero,
+    because when the effect is near zero the exit-bar reshuffling dominates it.
+    Bisection on that returned "1076.2 points", a real crossing and a
+    meaningless number, stated with a tolerance that made it look precise.
+
+    So the curve is sampled first. More than one sign change across the probe
+    grid means there is no breakeven to report, and saying that is the correct
+    answer rather than a failure to produce one.
 
     Args:
         evaluate: Maps a spread floor in points to expectancy in R.
@@ -214,18 +234,43 @@ def solve_breakeven_spread(
         high: Upper bracket, in points.
         tolerance_points: Stop when the bracket is narrower than this.
         max_iterations: Hard cap on bisection steps.
+        probe_points: Grid size for the monotonicity check. Two disables it.
 
     Returns:
-        The breakeven spread, or a bracketed non-answer.
+        The breakeven spread, or a non-answer that says which kind it is.
 
     Raises:
-        ValueError: If the bracket is empty.
+        ValueError: If the bracket is empty or the probe grid is too small.
     """
     if high <= low:
         raise ValueError(f"empty bracket: low={low}, high={high}")
+    if probe_points < 2:
+        raise ValueError(f"probe_points must be at least 2, got {probe_points}")
 
     at_low = evaluate(low)
     at_high = evaluate(high)
+
+    grid = [low + (high - low) * i / (probe_points - 1) for i in range(probe_points)]
+    values = [at_low, *(evaluate(x) for x in grid[1:-1]), at_high]
+    crossings = sum(1 for a, b in pairwise(values) if (a > 0) != (b > 0))
+    if crossings > 1:
+        sample = ", ".join(
+            f"{x:.0f}:{v:+.6f}" for x, v in zip(grid, values, strict=True)
+        )
+        return BreakevenSpread(
+            points=None,
+            expectancy_at_low=at_low,
+            expectancy_at_high=at_high,
+            low=low,
+            high=high,
+            iterations=0,
+            note=(
+                f"no breakeven: expectancy changes sign {crossings} times across "
+                f"the bracket, so there is no single spread at which the edge "
+                f"reaches zero. Sampled — {sample}. A bisection on this would "
+                f"return one of those crossings and present it as the answer."
+            ),
+        )
 
     if at_low <= 0:
         return BreakevenSpread(
