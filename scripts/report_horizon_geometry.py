@@ -32,9 +32,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from run_h001 import FIRST_TEST_FRACTION, N_FOLDS, _fold_geometry, build_design
+
 from data.loader import load_window
 from evaluation.splits import walk_forward_folds
-from run_h001 import FIRST_TEST_FRACTION, N_FOLDS, _fold_geometry, build_design
 
 CANDIDATE_HORIZONS = (4, 24, 120)
 """Fixed before this report was run. H = 24 is the registered incumbent."""
@@ -89,7 +90,7 @@ def main() -> int:
     print()
 
     for horizon in CANDIDATE_HORIZONS:
-        design, labels, eligible = build_design(frame, horizon)
+        _, _, eligible = build_design(frame, horizon)
         folds = walk_forward_folds(
             valid=eligible,
             n_folds=N_FOLDS,
