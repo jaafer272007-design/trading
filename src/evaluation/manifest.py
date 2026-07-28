@@ -26,6 +26,19 @@ from typing import Any
 
 import pandas as pd
 
+#: H-005 condition (iii), verbatim enough to be actionable. Emitted into every
+#: manifest that carries a ``cost_model_version``, because a result computed
+#: under a substituted cost model must say so where the result is stored rather
+#: than only where it is discussed.
+H005_DEVIATION_NOTICE = (
+    "Costs use H-005's registered substitute for EVALUATION.md §10, not §10 as "
+    "written: a constant spread floor of 75 points (5x the observed demo quote) "
+    "with §10's event multiplier on top, because the demo feed's flat 15-point "
+    "quote is not a payable spread and no session-dependent curve can be fitted "
+    "from it. No result from this run may be described as satisfying §10. "
+    "Admissible at RESEARCH.md Tier 2 at best while H-005 is open."
+)
+
 
 class RunType(StrEnum):
     """Whether a run may be cited as evidence."""
@@ -56,6 +69,8 @@ class RunManifest:
     runtime_seconds: float
     notes: str = ""
     llm: dict[str, Any] | None = field(default=None)
+    cost_model_version: str | None = field(default=None)
+    cost_model_deviation: str | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         """Enforce the run_type / hypothesis_id contract.
@@ -81,6 +96,13 @@ class RunManifest:
                 f"got {self.hypothesis_id!r}. It evaluates code, not a trading "
                 f"claim, and may never be cited as evidence for a hypothesis."
             )
+
+        # H-005 (iii): the deviation notice is carried by every run in the
+        # evaluation path that applies costs. It is set *here*, by the manifest
+        # writer, and is not a field a caller can supply, omit or reword — a
+        # notice the caller controls is a notice the caller can forget.
+        if self.cost_model_version is not None:
+            object.__setattr__(self, "cost_model_deviation", H005_DEVIATION_NOTICE)
 
     def to_json(self) -> str:
         """Serialise to indented JSON.
