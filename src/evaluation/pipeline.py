@@ -29,6 +29,7 @@ import numpy.typing as npt
 
 from evaluation.splits import Fold
 from metrics.brier import brier_skill_score
+from models.diagnostics import Diagnosable, FitDiagnostics
 from models.logistic import LogisticRegression, Standardizer
 
 
@@ -129,6 +130,13 @@ class FoldResult:
     probabilities: npt.NDArray[np.float64]
     outcomes: npt.NDArray[np.float64]
     n_train: int
+    diagnostics: FitDiagnostics | None = None
+    """Convergence evidence, when the estimator reports it.
+
+    ``None`` for the fixed-iteration combiner, which has nothing to report: it
+    takes exactly the steps it was told to and makes no claim about having
+    settled.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +154,33 @@ class WalkForwardResult:
     def n_decisions(self) -> int:
         """Count of pooled out-of-sample decisions."""
         return int(self.outcomes.size)
+
+    @property
+    def diagnostics(self) -> tuple[FitDiagnostics, ...]:
+        """Convergence evidence from every fold that reported any."""
+        return tuple(r.diagnostics for r in self.fold_results if r.diagnostics)
+
+    @property
+    def converged(self) -> bool | None:
+        """Whether **every** fold converged.
+
+        Returns:
+            ``None`` when no fold reported — the fixed-iteration combiner makes
+            no claim, and reporting ``True`` for it would be an assertion
+            nothing measured.
+        """
+        reported = self.diagnostics
+        if not reported:
+            return None
+        return all(d.converged for d in reported)
+
+    @property
+    def worst_gradient_norm(self) -> float | None:
+        """Largest gradient infinity-norm across folds, or ``None``."""
+        reported = self.diagnostics
+        if not reported:
+            return None
+        return max(d.gradient_infinity_norm for d in reported)
 
 
 def run_walk_forward(
@@ -211,6 +246,9 @@ def run_walk_forward(
                 probabilities=probabilities,
                 outcomes=labels[fold.test],
                 n_train=int(train_idx.size),
+                diagnostics=(
+                    model.diagnostics if isinstance(model, Diagnosable) else None
+                ),
             )
         )
 
