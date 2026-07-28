@@ -12,10 +12,10 @@
 
 ```
 Registered (registry completeness) ... 6
-  ├─ Accepted ....................... 0
+  ├─ Accepted ....................... 1   H-001 (K-1 does not trip, 2026-07-27)
   ├─ Rejected ....................... 0
   ├─ Standing ....................... 1
-  └─ In flight ...................... 5
+  └─ In flight ...................... 4
 
 N_claims (multiple-testing denom.) ... N = 2
   ├─ gates  (not counted) ........... 4   H-001, H-002, H-005, H-006
@@ -147,8 +147,9 @@ phase.
 - **Registered:** 2026-07-26 14:32 UTC
 - **Operationalisation amended:** 2026-07-26 (before any run; see §2 rule 1)
 - **Fold geometry amended:** 2026-07-27 (before any run — `FIRST_TEST_FRACTION = 0.50`)
+- **Executed:** 2026-07-27 on real market data
 - **Class:** gate — does not count toward `N_claims`
-- **Status:** REGISTERED
+- **Status:** ACCEPTED — K-1 does not trip
 
 **Claim**
 > With labels randomly permuted, the deterministic path (features → combiner) will show no
@@ -333,6 +334,104 @@ phase.
 > - PASS: proceed to H-002.
 > - FAIL: **K-1 halt.** Full leakage audit. No other work proceeds.
 
+--- RUN ---
+
+- **Run manifest:** `runs/8838059a-56eb-43dd-b643-e4ccfc0f79b3.json`
+  sha256 `b6daca9ac1eb977fa8300f2ef78c742fa4be1d5c8e8aa274ecd6ce7586534c48`
+- **run_id:** `8838059a-56eb-43dd-b643-e4ccfc0f79b3`
+- **Executed:** 2026-07-27, commit `ae33621`, `git_dirty: false`
+- **Registration precedes the run:** geometry amendment committed `43dafa2` at
+  2026-07-27T22:11:44Z, merged to main as `a0dda23`. §2 rule 1 satisfied.
+- **Data:** `GOLD-H1-20080311-20260727.csv`, derived snapshot
+  `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`.
+  65,395 in-window bars, 64,886 eligible, 1,364 pooled decisions.
+- **Verdict:** **ACCEPTED — K-1 does not trip.**
+
+**Result — the null distribution, 30 seeds, 1,364 decisions each**
+
+> ```
+> s2  -0.002799  s25 -0.002566  s19 -0.002184  s13 -0.002170  s22 -0.001826  s5  -0.001379
+> s29 -0.001318  s11 -0.001262  s21 -0.001203  s12 -0.001031  s28 -0.000844  s7  -0.000822
+> s8  -0.000782  s15 -0.000762  s10 -0.000744  s20 -0.000724  s6  -0.000631  s3  -0.000609
+> s17 -0.000507  s0  -0.000504  s23 -0.000443  s14 -0.000429  s26 -0.000315  s18 -0.000291
+> s9  -0.000229  s24 -0.000140  s16 -0.000121  s1  +0.000033  s27 +0.000202  s4  +0.000757
+> ```
+>
+> min −0.002799 · max +0.000757 · sd 0.000815 · 3 of 30 seeds above zero
+>
+> The distribution sits where §5.1 says it must under permuted labels: centred
+> slightly below zero, because a model fit on noise can only overfit and
+> overfitting costs skill. The three positive seeds are two and three orders of
+> magnitude below ε.
+
+**Pass conditions — measured**
+
+> | # | Condition | Threshold | Measured | |
+> |---|---|---|---|---|
+> | i | 95% bootstrap CI upper bound of mean BSS | ≤ 0.01 | **−0.000577** | pass |
+> | ii | `max_s BSS_s` | ≤ 0.05 | **+0.000757** | pass |
+> | iii | median `BSS_s` | ≤ 0 | **−0.000734** | pass |
+>
+> mean BSS −0.000855, 95% CI [−0.001156, −0.000577], bootstrap seed 1337,
+> 10,000 resamples. All three hold. **K-1 does not trip.**
+
+**Unshuffled control — reported alongside, not part of the verdict**
+
+> Same pipeline, same folds, true labels: **BSS = −0.006766** on n = 1,364.
+>
+> **It is worse than the shuffled null**, by roughly 8× the null's mean. That is
+> stated because it is what happened, not explained away: this three-feature
+> combiner extracts nothing directional at H = 24 on this data, and fitting real
+> labels costs more out-of-sample than fitting noise does — a spurious in-sample
+> relationship that does not survive the fold boundary.
+>
+> This is **not** a K-3 result. K-3 lives on the sealed holdout, which has not
+> been opened, and no cost model, baseline ladder, or random-entry comparison
+> (H-003) has run. It is not evidence for or against any edge claim and must not
+> be cited as one. It is recorded here because a shuffled-label null is
+> uninterpretable without knowing what the same machinery does on real labels.
+
+**Leak fixtures — both trip, as required**
+
+> | fixture | mean BSS | max | outcome |
+> |---|---|---|---|
+> | `label_in_features` | +0.999984 | +0.999984 | **TRIPPED** |
+> | `target_encoding_on_all` | +0.247319 | +0.277759 | **TRIPPED** |
+>
+> The gate is demonstrably capable of firing on this data, this geometry, and
+> this combiner. Without these the verdict above would be a statement about the
+> estimator's weakness rather than the pipeline's integrity.
+
+**K-1 sensitivity at this capacity**
+
+> Combiner fingerprint `9b09e2482278a57a…`, 4 parameters (3 features +
+> intercept). Baseline run `5c6c585b-7531-48bd-945c-8c077b759a05` at commit
+> `7d6ed38b` — synthetic, `harness_validation`, never evidence for H-001.
+>
+> | mode | recorded mean BSS | trips at 4 params |
+> |---|---|---|
+> | `label_in_features` | +0.999984 | yes |
+> | `target_encoding_on_all` | +0.239781 | yes |
+> | `train_test_overlap` | −0.000901 | **no** |
+> | `scaler_fit_on_all` | −0.001390 | **no** |
+>
+> `train_test_overlap` is a genuine leak that a four-parameter linear combiner
+> lacks the capacity to exploit. **This pass therefore certifies that no label
+> reaches the model. It does not certify the absence of all leakage**, and the
+> standing-limitation clause below enumerates what it misses.
+
+**Notes**
+
+> Fold 1's test window straddles the 2022-10-21 session-era boundary, and folds
+> 2–4 train on predominantly pre-2022 pools while testing entirely after it.
+> Under permuted labels that cannot affect the measurement — there is no signal
+> to be regime-dependent about — but it is the geometry a later skill claim
+> would inherit, and it is recorded in the amendment above rather than left to
+> be rediscovered.
+>
+> Embargo removed 0 training bars beyond purge. Expected under forward-only
+> tiling and reported rather than listed as an applied control.
+
 **Data requirement**
 > A verdict on H-001 requires real market data. Runs against `src/data/synthetic.py` are
 > `run_type: harness_validation`, carry `hypothesis_id: null`, and **may never be cited as
@@ -400,6 +499,8 @@ phase.
 ### H-003 — Signal beats random entry
 
 - **Registered:** 2026-07-26 14:32 UTC
+- **Operationalisation amended:** 2026-07-28 — before any run, and before the backtest
+  engine exists (see §2 rule 1)
 - **Class:** claim — counts toward `N_claims`
 - **Status:** REGISTERED
 
@@ -410,11 +511,247 @@ phase.
 **Primary metric & threshold**
 > Difference in expectancy per trade, bootstrap p < 0.05.
 
-**Pre-committed interpretation**
-> - PASS: the signal contains information. Proceed to build the agent panel.
+---
+
+**Amended 2026-07-28, before any run: what "the signal", "random entry" and "identical
+risk management" actually are**
+
+> The claim names three objects and defines none of them. `CLAUDE.md` Build Order step 3
+> is the backtest engine, and an engine written before this specification would fix all
+> three by implementation — after which registering them is transcription, not
+> pre-commitment. H-001's split point was the same failure caught one step later. This is
+> the same discipline applied one step earlier: **the engine is written to this entry, not
+> this entry to the engine.**
+>
+> Every geometry figure below is a property of the calendar and the eligibility mask,
+> identical under any labels at all. That is why it can be stated in advance without
+> peeking at anything.
+
+**A — The signal under test**
+
+> | element | value |
+> |---|---|
+> | features | `log_return_24`, `realized_vol_24`, `range_position_48` |
+> | combiner | hand-rolled logistic regression, fixed iteration count, fit per fold on training rows only |
+> | direction | long if `p > 0.5`, short if `p < 0.5` |
+> | `p == 0.5` exactly | **no trade.** Counted and reported separately |
+>
+> Identical to the deterministic path K-1 cleared, and identical for a reason: **K-1 does
+> not certify "the pipeline", it certifies a path** — those three features, that combiner,
+> that fold geometry. A different feature set here would be an object no gate has cleared,
+> and the K-1 result could not be cited for it.
+>
+> **`atr_14` is deliberately excluded from the signal** although it is registered and
+> passes H-002 on every commit. It sets the stop distance under §D. A feature that both
+> sizes the risk and votes on the direction couples the two things rung 1 exists to
+> separate.
+
+**B — Decision times: already fixed, label-free, and sufficient for K-6**
+
+> Not a new choice. `evaluation/splits.py` already spaces test decisions `horizon` bars
+> apart — `all_idx[test_start:test_end:24]`, filtered by the eligibility mask. It is the
+> grid H-001 ran on, unchanged.
+>
+> `[MEASURED]` `scripts/report_fold_geometry.py`, snapshot `71f9fcf1…`, at the registered
+> `FIRST_TEST_FRACTION = 0.50`:
+>
+> | | pooled | per fold |
+> |---|---|---|
+> | decisions | **1,364** | 272–273 |
+> | × K-6 floor (150) | 9.1 | 1.8 |
+>
+> **K-6 is answered before the run rather than discovered after it.** Eligibility is
+> `label_validity & feature_validity & isfinite`, and none of those reads a label *value*,
+> so the count is invariant under any permutation of the labels. Stating it in advance is
+> not a peek — it is the same argument that licensed the fold-geometry sweep.
+>
+> Both arms trade at exactly these 1,364 timestamps. **The comparison is paired.**
+>
+> **No entry filter and no confidence threshold: τ = 0, registered.** Every grid point
+> produces a trade. This is the minimum-degrees-of-freedom choice — a threshold
+> `|p − 0.5| ≥ τ` is a constant somebody picks, and picking it after seeing decision
+> counts or returns is `RESEARCH.md` §5.3 with extra steps.
+>
+> **What τ = 0 costs, stated because it is a real limitation and not a footnote.** H-003
+> cannot detect a signal whose value lies in *when* to trade rather than *which way*. If
+> the combiner's information is concentrated in its confident calls, trading all 1,364
+> dilutes it, and H-003 is then a conservative test that can fail on a signal a threshold
+> would have found. Thresholding is a separate hypothesis and needs a separate ID.
+
+**C — The control: what "random entry" means here**
+
+> Same 1,364 timestamps, same risk management, direction drawn uniform over
+> `{long, short}` from seed stream `random_entry: [0..29]` (`REPRODUCIBILITY.md` §3, added
+> by this amendment). Thirty arms, matching H-001's sweep, reported as a distribution and
+> never as a single seed.
+>
+> **Rejected alternative, recorded: randomising the entry *times* as well.** §2 rung 1
+> isolates exactly one question — is the edge in the signal or in the stop/target geometry?
+> Randomising times changes two things at once and the difference stops attributing to
+> either. Holding times fixed also removes calendar luck from the comparison outright
+> rather than averaging it away across seeds.
+
+**D — "Identical risk management", specified**
+
+> | element | value | why this and not something else |
+> |---|---|---|
+> | stop | `1.5 × ATR(14)` at entry | wide enough that ordinary H1 noise does not dominate the exit |
+> | target | `1.5 × ATR(14)` | **symmetric.** An asymmetric target embeds a payoff-shape bet in the geometry — the thing rung 1 holds constant — and hands the random arm a non-zero gross expectancy, which would make the control itself a strategy |
+> | time exit | 24 bars | the label horizon: a decision closes where the thing it predicted resolves |
+> | entry fill | **open of bar `T+1`** | the signal is computed on bar `T`'s close. Filling at that close is a zero-latency assumption and §10 forbids it |
+> | exit fill | worse of the level and the next bar's open | §10 gap-through: stops do not fill at the stop price |
+> | intrabar ambiguity | if one bar's range contains **both** stop and target, the **stop** is taken | H1 bars carry no intrabar path. The pessimistic resolution is the only one §10 permits |
+> | sizing | risk-normalised, `size = R / (1.5 × ATR)`, `R` constant | expectancy per trade is the metric; unnormalised size makes it a function of the ATR regime rather than of the signal |
+>
+> "Identical" is enforced structurally rather than by inspection: both arms call one
+> position-lifecycle function and differ only in the direction argument. A test asserts
+> that swapping the direction source leaves every other field of the decision record
+> unchanged.
+
+**E — Costs, and a partial invariance that must be measured rather than assumed**
+
+> `EVALUATION.md` §10 under H-005's registered substitute: 75-point spread floor, §10's
+> session and event multipliers on top of it, ATR- and size-dependent slippage,
+> gap-through stops, per-lot commission both sides, swap past rollover, 250 ms latency
+> stress-tested at 500 ms. H-005 conditions (i)–(iii) apply and a run violating any of
+> them is **VOID**, not a negative result.
+>
+> Both arms enter at the same times, one round turn per decision, at the same size.
+> Spread and commission are therefore identical across arms and cancel in the
+> *difference*, which makes the primary metric largely insensitive to the exact floor.
+> **It does not cancel completely.** Swap is direction-asymmetric on gold, and gap-through
+> severity differs by direction. The run reports realised cost per arm side by side; if
+> they differ materially the invariance argument is void and must not be repeated in the
+> writeup.
+>
+> H-005 (ii) is satisfied by reporting the breakeven spread of the **signal arm's own
+> absolute expectancy**. The paired difference has no meaningful breakeven spread under
+> the invariance above, and reporting one as unbounded would be an artefact of the
+> pairing rather than a fact about the edge.
+
+**F — The test**
+
+> Primary, unchanged in substance: difference in expectancy per trade, bootstrap
+> `p < 0.05`, **one-sided** — the claim is directional.
+>
+> Paired statistic: `d_i = pnl_signal,i − mean_s pnl_random,s,i` over the 1,364 decisions;
+> test `mean(d) > 0`.
+>
+> | | value |
+> |---|---|
+> | resampling | stationary bootstrap (Politis–Romano) over the decision sequence |
+> | expected block length | **10 decisions** |
+> | resamples | 10,000 |
+> | seed | 1337 (`REPRODUCIBILITY.md` §3, `bootstrap`) |
+>
+> Block length is a registered degree of freedom, not a measurement. Decisions are already
+> non-overlapping so label-window dependence is zero, and what remains is regime
+> persistence. **Sensitivity is reported at block length 1 and 25 alongside the primary
+> figure** — reported, never selected from, exactly as with K-1's ε.
+>
+> Secondary, reported but explicitly not part of the verdict: the rank of the signal arm's
+> expectancy within the 30 random arms. Same treatment as H-001's unshuffled control — a
+> number worth carrying forward, not a second test.
+
+**G — A contradiction inside the constitution, resolved conservatively**
+
+> The original interpretation below said PASS means "proceed to build the agent panel".
+> `EVALUATION.md` §2 says the ladder must be beaten **in order**, and the agent panel is
+> rung 5. Rungs 2 (always-long), 3 (buy-and-hold, risk-parity sized) and 4 (single moving-
+> average crossover) sit between. As written, H-003's PASS action skipped three rungs of a
+> ladder whose entire premise is that skipping is what produces false confidence.
+>
+> Under `CLAUDE.md`'s conflict order a registered hypothesis outranks this, so the
+> contradiction is resolved by **tightening H-003, not by reinterpreting §2**: PASS now
+> licenses rung 2 and nothing further. Narrowing what a result licenses is always
+> permitted — it is the same asymmetry as H-005's spread floor, which may be raised freely
+> and lowered only through a new ID.
+>
+> Rungs 2–4 are **not** measured in this run. They are cheap once the engine exists, but
+> rung 4 needs a fast/slow pair and rungs 2–3 need an equity-curve comparison rather than a
+> per-decision one; inventing those constants here would smuggle three unregistered
+> choices into an amendment. They get their own hypothesis ID when they are run. What this
+> entry does fix is that the engine must be **able** to run them without new engine work —
+> see §I.
+
+**H — Registered researcher degrees of freedom**
+
+> Every constant this entry introduces, with its value, in one place. None may change after
+> the run without a new hypothesis ID.
+>
+> | constant | value | class |
+> |---|---|---|
+> | `SIGNAL_THRESHOLD` τ | 0.0 | minimum-DoF choice (§B) |
+> | `STOP_ATR_MULT` | 1.5 | judgement |
+> | `TARGET_ATR_MULT` | 1.5 | judgement, constrained to equal the stop (§D) |
+> | `MAX_HOLD_BARS` | 24 | derived from the registered label horizon |
+> | `ENTRY_FILL` | open of `T+1` | forced by §10 latency |
+> | `INTRABAR_RESOLUTION` | stop-first | forced by §10 pessimism |
+> | `BOOTSTRAP_BLOCK` | 10 decisions | judgement; sensitivity at 1 and 25 reported |
+> | `N_RANDOM_SEEDS` | 30, enumerated `0…29` | matches H-001 |
+> | `SPREAD_FLOOR_POINTS` | 75 | H-005; may be raised, never lowered |
+>
+> **Guardrail.** Re-running H-003 under different constants and reporting whichever passes
+> is `EVALUATION.md` §9 — as many hypotheses as configurations tried — and `RESEARCH.md`
+> §5.2. A second configuration is a second ID and a second draw against `N_claims`.
+
+**I — What the engine must implement to satisfy this entry**
+
+> The scope, registered rather than left to be discovered while writing it. `CLAUDE.md`
+> Build Order step 3.
+>
+> 1. **Position lifecycle** — one function taking a direction, producing entry fill, stop,
+>    target, time exit, gap-through resolution and the pessimistic intrabar rule. Both arms
+>    and every later rung route through it.
+> 2. **Cost model** as §E, versioned and hashed into the run manifest (`cost_model_version`,
+>    `REPRODUCIBILITY.md` §5), with the H-005 deviation notice emitted by the manifest
+>    writer rather than by the caller.
+> 3. **Build-enforced H-005 (i)–(iii)** — the floor as a module constant with a test
+>    asserting it has not been reduced, in the same pattern as the K-1 sensitivity guard.
+> 4. **Decision log** per `REPRODUCIBILITY.md` §7, written for both arms, with
+>    `decision_method: logistic` and `random` respectively. LLM fields null — there is no
+>    model in this path.
+> 5. **Breakeven-spread solver** — the spread floor at which the signal arm's expectancy
+>    reaches zero, required by H-005 (ii) for every edge claim.
+> 6. **Direction-source injection** so rungs 2–4 and, later, an agent, are new direction
+>    sources rather than new engines. This is what makes §G's deferral cheap.
+> 7. **Doubling test (K-5)** — every cost doubled, re-run, reported.
+>
+> Not in scope for H-003 and not blocking it: DSR (K-7) and `N_eff` (§6). DSR corrects a
+> *Sharpe* for selection and H-003's metric is expectancy difference; `N_eff` measures
+> agreement among agents and there are no agents. Both are required before any claim that
+> reports a Sharpe or an agent panel, and neither is a reason to delay this run.
+
+**Dataset & window**
+
+> Derived snapshot `71f9fcf1a2e2a46dc2136d2b4bbf1a7b43c2abcd5cfce1dfb9028c9b4ac028c6`,
+> 65,395 in-window bars, 64,886 eligible, walk-forward, `FIRST_TEST_FRACTION = 0.50`,
+> 5 folds — the geometry H-001 certified. Sealed holdout untouched.
+
+**Sample size expected**
+
+> 1,364 pooled decisions, 272–273 per fold. K-6 cleared by 9.1× pooled and 1.8× per fold,
+> known before the run (§B).
+
+**What a PASS does not establish**
+
+> - **Not profitability.** The metric is a difference against random entry. A PASS with
+>   negative absolute expectancy says the signal carries directional information the
+>   geometry does not — it does not say the system makes money, and the writeup may not
+>   imply it.
+> - **Tier 2 at best** under `RESEARCH.md`, never Tier 1, while H-005 is open.
+> - **Only rung 1.** See §G.
+> - R-001 is untouched: no session-relative feature is in the signal. The fold *geometry*
+>   still rests on the era declaration, which remains externally unconfirmed.
+
+**Pre-committed interpretation** *(amended 2026-07-28 — PASS narrowed, see §G)*
+> - PASS: the signal contains information the risk geometry does not. **Proceed to rung 2
+>   of `EVALUATION.md` §2.** Not to the agent panel — rungs 2, 3 and 4 stand between.
 > - FAIL: **K-4.** The architecture is not the problem — the signal is. Do not add agents;
 >   adding agents to a signal with no information produces a more expensive way to be
 >   wrong. Return to feature research.
+> - AMBIGUOUS (the one-sided bootstrap CI straddles zero): **REJECT.** §3's default, and
+>   the default is not overridden by a favourable point estimate.
 
 ---
 

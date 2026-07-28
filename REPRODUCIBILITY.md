@@ -60,8 +60,15 @@ seeds:
   torch: 42            # if used
   bootstrap: 1337
   shuffled_labels: [0..29]   # 30 seeds, enumerated not generated
+  random_entry: [0..29]      # 30 seeds, enumerated not generated — H-003 §C
   robustness_sweep: 7
 ```
+
+- `random_entry` is a **separate stream from `shuffled_labels`**, not the same numbers
+  reused. They are drawn at the same point in the same pipeline for different purposes,
+  and sharing a stream would make the random-entry control's directions a deterministic
+  function of the shuffled-label permutations — two "independent" controls correlated by
+  construction, in a way nothing in the output would reveal.
 
 - Every stochastic process draws from a named, logged seed.
 - Results are reported across a **seed sweep**, never a single seed. A finding that holds

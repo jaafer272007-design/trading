@@ -67,8 +67,28 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
+from data.calendar import load_calendar
 from data.classify import feature_validity, label_validity
 from data.loader import load_window
+from data.raw import find as find_export
+from evaluation.manifest import (
+    RunManifest,
+    RunType,
+    feature_set_version,
+    file_sha256,
+    git_commit,
+    git_dirty,
+)
+from evaluation.pipeline import LeakMode, run_walk_forward
+from evaluation.sensitivity import (
+    RECORDED_AT_COMMIT,
+    RECORDED_MEAN_BSS,
+    RECORDED_PARAMETER_COUNT,
+    RECORDED_RUN_ID,
+    RECORDED_SILENT_MODES,
+    RECORDED_TRIPPING_MODES,
+    combiner_fingerprint,
+)
 from evaluation.shuffle import SHUFFLED_LABEL_SEEDS, run_shuffled_label_study
 from evaluation.splits import (
     assert_no_leakage,
@@ -257,12 +277,177 @@ def main(argv: list[str] | None = None) -> int:
         print(RULE)
         return 0
 
-    study = run_shuffled_label_study(design, labels, folds)
+    if git_dirty():
+        print(
+            "REFUSING TO RUN: the git tree is dirty. CLAUDE.md Hard Rule 10 and "
+            "REPRODUCIBILITY.md §5 make the run void, so it is not started.",
+            file=sys.stderr,
+        )
+        return 2
+
+    # NaN never reaches the combiner: ineligible rows are excluded by the fold
+    # mask, and what remains is finite. Zeroing is a shape convenience for the
+    # rows nobody reads, not an imputation — DATA_CONTRACT §6 forbids filling a
+    # value that anything downstream could consume, and nothing consumes these.
+    fitted = np.nan_to_num(design)
+    outcome = np.nan_to_num(labels)
+
+    print("-- the null distribution " + "-" * 49)
+    study = run_shuffled_label_study(fitted, outcome, folds)
+    order = np.argsort(study.bss_per_seed)
+    print(f"  {len(study.seeds)} seeds, {study.n_decisions:,} decisions each")
+    for row in range(0, len(study.seeds), 6):
+        chunk = order[row : row + 6]
+        print(
+            "    "
+            + "  ".join(
+                f"s{study.seeds[i]:<2} {study.bss_per_seed[i]:+.6f}" for i in chunk
+            )
+        )
+    print(
+        f"  ascending. min {study.bss_per_seed.min():+.6f}  "
+        f"max {study.bss_per_seed.max():+.6f}  "
+        f"sd {study.bss_per_seed.std(ddof=1):.6f}"
+    )
+    print(
+        f"  seeds with BSS > 0: {int((study.bss_per_seed > 0).sum())} of "
+        f"{len(study.seeds)}"
+    )
+    print()
     print(study.summary())
-    print(f"  elapsed .......... {time.time() - started:.1f}s")
-    print(f"  run_id ........... {uuid.uuid4()}")
-    print(f"  at ............... {datetime.now(UTC).isoformat()}")
+    print()
+
+    print("-- unshuffled control (NOT part of the verdict) " + "-" * 26)
+    control = run_walk_forward(fitted, outcome, folds)
+    print(f"  BSS on true labels : {control.bss:+.6f}   n = {control.n_decisions:,}")
+    print("     Reported because a shuffled-label null is uninterpretable without")
+    print("     knowing what the same pipeline does on real labels. It is NOT a")
+    print("     skill claim: no cost model, no baseline ladder, no holdout, and")
+    print("     H-003's random-entry comparison has not run. K-3 lives on the")
+    print("     sealed holdout and this is not it.")
+    print()
+
+    print("-- leak fixtures: these MUST trip K-1 " + "-" * 36)
+    fixture_ok = True
+    for mode in (LeakMode.LABEL_IN_FEATURES, LeakMode.TARGET_ENCODING_ON_ALL):
+        leaked = run_shuffled_label_study(fitted, outcome, folds, leak=mode)
+        tripped = not leaked.passed
+        fixture_ok = fixture_ok and tripped
+        print(
+            f"  {mode.value:<24} mean BSS {leaked.mean_bss:+.6f}  "
+            f"max {leaked.max_bss:+.6f}  "
+            f"{'TRIPPED — correct' if tripped else '*** DID NOT TRIP ***'}"
+        )
+    print("     A gate that has never fired is indistinguishable from one that")
+    print("     cannot. If either of these passes, the verdict above means")
+    print("     nothing whatever it says.")
+    print()
+
+    print("-- K-1 sensitivity at this combiner capacity " + "-" * 29)
+    print(
+        f"  parameters        : {RECORDED_PARAMETER_COUNT} "
+        f"({len(FEATURES)} features + intercept)"
+    )
+    print(f"  fingerprint       : {combiner_fingerprint()[:16]}…")
+    print(f"  baseline run_id   : {RECORDED_RUN_ID}")
+    print(
+        f"  baseline commit   : {RECORDED_AT_COMMIT[:12]}  (synthetic, "
+        f"harness_validation)"
+    )
+    print(f"  trips at capacity : {sorted(RECORDED_TRIPPING_MODES)}")
+    print(f"  SILENT at capacity: {sorted(RECORDED_SILENT_MODES)}")
+    for mode in sorted(RECORDED_SILENT_MODES):
+        print(f"      {mode:<24} recorded mean BSS {RECORDED_MEAN_BSS[mode]:+.6f}")
+    print("     train_test_overlap is a real leak this combiner cannot exploit")
+    print("     at four parameters. A pass therefore certifies that no label")
+    print("     reaches the model — not the absence of all leakage.")
+    print()
+
+    calendar = load_calendar()
+    manifest = RunManifest(
+        run_id=str(uuid.uuid4()),
+        timestamp_utc=datetime.now(UTC).isoformat(),
+        git_commit=git_commit(),
+        git_dirty=git_dirty(),
+        run_type=RunType.EVALUATION,
+        hypothesis_id="H-001",
+        data_snapshot_sha256=_snapshot_derived_sha256(args.snapshot),
+        data_window={
+            "start": str(frame.index[0]),
+            "end": str(frame.index[-1]),
+            "window_start": calendar.window_start.isoformat(),
+            "first_test_fraction": str(FIRST_TEST_FRACTION),
+        },
+        evaluation_mode="walk_forward",
+        holdout_openings_remaining=3,
+        cumulative_hypothesis_count_n_claims=2,
+        feature_set_version=feature_set_version(tuple(f.name for f in FEATURES)),
+        seeds={"shuffled_labels": list(SHUFFLED_LABEL_SEEDS), "bootstrap": 1337},
+        env_lock_sha256=file_sha256(Path(__file__).resolve().parents[1] / "uv.lock"),
+        anonymisation_protocol="none",
+        runtime_seconds=round(time.time() - started, 3),
+        notes=(
+            f"H-001 on real market data. Raw export "
+            f"{find_export('H1').filename}. Fold geometry registered at commit "
+            f"43dafa2 before this run. Unshuffled control BSS "
+            f"{control.bss:+.6f} reported alongside and not part of the verdict."
+        ),
+    )
+    written = manifest.write(Path(__file__).resolve().parents[1] / "runs")
+
+    print("-- run manifest " + "-" * 58)
+    print(f"  path         : runs/{written.name}")
+    print(f"  sha256       : {file_sha256(written)}")
+    print(f"  run_id       : {manifest.run_id}")
+    print(f"  run_type     : {manifest.run_type.value}")
+    print(f"  hypothesis   : {manifest.hypothesis_id}")
+    print(f"  git_commit   : {manifest.git_commit}")
+    print(f"  git_dirty    : {manifest.git_dirty}")
+    print(f"  snapshot     : {manifest.data_snapshot_sha256}")
+    print()
+
+    print(RULE)
+    if not fixture_ok:
+        print("VERDICT: VOID — a leak fixture did not trip.")
+        print("  The gate cannot detect a planted leak, so its verdict on the")
+        print("  honest pipeline carries no information. This is not a K-1 halt")
+        print("  and not a K-1 pass; it is a broken instrument.")
+        print(RULE)
+        return 2
+    if study.passed:
+        print("VERDICT: K-1 PASSES.")
+        print("  One gate cleared. No label reaches the model along this path,")
+        print("  at this combiner capacity, under this geometry. That is all it")
+        print("  says: not that the pipeline is correct, not that there is an")
+        print("  edge, not that other leak classes are absent.")
+    else:
+        print("VERDICT: K-1 TRIPS. HALT.")
+        print("  EVALUATION.md §1: leakage or bug, nothing downstream is valid.")
+        print("  The required action is a full leakage audit. No other work")
+        print("  proceeds, and this is not a debugging session — do not adjust")
+        print("  the pipeline until the cause is identified.")
+    print(RULE)
     return 0 if study.passed else 1
+
+
+def _snapshot_derived_sha256(snapshot: Path) -> str:
+    """Read the derived-frame hash out of a snapshot manifest.
+
+    The snapshot's own record rather than a re-hash: the loader has already
+    refused the snapshot if that record disagrees with the calendar it was
+    built under, so re-deriving it here would add a number without adding a
+    check.
+
+    Args:
+        snapshot: Snapshot directory.
+
+    Returns:
+        The derived frame's SHA-256.
+    """
+    import json
+
+    text = (snapshot / "manifest.json").read_text(encoding="utf-8")
+    return str(json.loads(text)["derived_sha256"])
 
 
 def _fold_geometry(n_bars: int, n_folds: int) -> tuple[int, int]:
