@@ -9,14 +9,131 @@ Four claims have been rejected: H-007, H-009, H-010, H-012. One was accepted and
 reading withdrawn: H-003. One gate stands: H-002. `EVALUATION.md` §2's ladder is halted at
 rung 2 and has been since H-007.
 
-Everything below is `[MEASURED]` with provenance, or is explicitly a judgement. §6 states a
-position and §7 makes the case for stopping.
+Everything below is `[MEASURED]` with provenance, or is explicitly a judgement. §1 is the
+finding, §7 states a position, §8 makes the case for stopping, and §10 is the final
+state of the registry.
 
 ---
 
-## 1. What has been measured about this instrument, at this resolution, on this feed
+## 1. The archival gap — the finding, and what discharging it showed
 
-### 1.1 No deterministic feature set tried has carried directional information
+**This is first because it is the most consequential thing in this document, and because
+it was found while assembling it rather than by any gate.**
+
+### 1.1 What was wrong
+
+`REPRODUCIBILITY.md` §8 requires run manifests "retained for the project's full life", a
+monthly cold-storage export, and a **quarterly restore drill** — "pick a random result from
+≥ 3 months prior and reproduce it from the manifest alone. A reproducibility policy that is
+never exercised is not a policy."
+
+`[MEASURED]`: **`runs/` was in `.gitignore`.** No manifest, decision log or result file had
+ever been committed. What was version-controlled was the **sha256 of each manifest, recorded
+in its `HYPOTHESES.md` entry** — and nothing else. Zero of §8's obligations had been
+discharged: no export, no drill, no retention.
+
+### 1.2 Why §8 escaped, and the transferable lesson
+
+Every rule in this project that survived became a **build-failing test**:
+
+| rule | enforcement |
+|---|---|
+| `DATA_CONTRACT.md` §1 causality | `tests/causality.py`, swept per feature, per seed |
+| feature registry completeness | filesystem vs declaration, `tests/test_causality.py` |
+| `REPRODUCIBILITY.md` §6 K-1 sensitivity | capacity signature, measured not read |
+| R-001 session-relative block | registry refusal, with the declaration falsified |
+| H-005 spread floor | `CostModel.__post_init__` refuses a lower floor |
+| **`REPRODUCIBILITY.md` §8 archival** | **prose** |
+
+**§8 is the only one that stayed prose, and it is the only one that was not obeyed.** Not
+through disagreement or oversight in any single moment — nothing ever asked. The rule was
+written, read, and quoted in a retrospective while being violated by the `.gitignore` three
+directories away.
+
+**The transferable lesson: a rule that is not a test is a rule you are relying on luck to
+follow.** It survives exactly as long as nobody does the ordinary thing that breaks it —
+here, adding `runs/` to `.gitignore`, which is what one does with output directories. That
+is not a lapse in discipline. It is what happens to prose.
+
+### 1.3 The discharge — verified, not asserted
+
+Every manifest the registry references by hash, checked against the file before committing:
+
+| run | hypothesis | recorded sha256 | verdict |
+|---|---|---|---|
+| `13ae20a1` | H-003 | `53cde12e…` | **MATCH** |
+| `8838059a` | H-001 | `b6daca9a…` | **MATCH** |
+| `ab8dfbcb` | H-007 | `2f02739a…` | **MATCH** |
+| `bd93b544` | H-012 | `49938ebe…` | **MATCH** |
+| `dc0f40bc` | **H-009** | `0c2ed357…` | **FILE ABSENT** |
+
+Four of five verify exactly. Now committed, along with two harness-validation manifests,
+H-003's 4.2 MB decision log, and the H-010 and H-012 row data.
+
+`src/evaluation/archive.py` parses every `**Run manifest:**` reference out of the registry
+and `tests/evaluation/test_archive.py` fails the build when a hash has no file behind it,
+when a file does not match its hash, or when `runs/` is gitignored again. Same shape as the
+guards that worked.
+
+### 1.4 The loss, named
+
+**H-009's manifest is unrecoverable.** Run `dc0f40bc-422c-433f-8790-4567a0408843`, executed
+2026-07-28 at commit `ea4dc33` on a clean tree, in a session whose filesystem is gone. It
+was never committed because `runs/` was ignored.
+
+**What survives:** the sha256 in H-009's entry, the full result block, the code at
+`ea4dc33`, and the snapshot hash. Together those are enough to **re-run** H-009. They are
+not enough to **verify that a re-run reproduces the original**, because the artefact the
+recorded hash refers to no longer exists to be compared against.
+
+`archive.KNOWN_LOST` records this, and the guard checks the record from both sides: an entry
+whose file exists fails the build as loudly as a missing file with no entry.
+
+### 1.5 The restore drill, run once
+
+§8's letter asks for a result "≥ 3 months prior". **The project is eleven days old, so that
+criterion cannot be met and is recorded as unmet rather than reinterpreted.** The drill ran
+on the oldest evaluation run instead: **H-001, `8838059a`, 2026-07-27**.
+
+Method — from the manifest alone: check out the recorded commit
+`ae3362159628807b9671e4e2d46c73c0c4142d47` into a clean worktree, build the environment from
+the locked file at that commit, restore the snapshot, re-run, compare.
+
+Preconditions verified before running:
+
+| | recorded in manifest | at that commit |
+|---|---|---|
+| `env_lock_sha256` | `ff88c884…` | `ff88c884…` **match** |
+| `data_snapshot_sha256` | `71f9fcf1…` | `71f9fcf1…` **match** |
+
+**Result — every reported number reproduces:**
+
+| quantity | recorded 2026-07-27 | drill |
+|---|---|---|
+| mean BSS, 30 seeds | `−0.000855` | `−0.000855` |
+| 95% CI upper | `−0.000577` | `−0.000577` |
+| median BSS | `−0.000734` | `−0.000734` |
+| max BSS | `+0.000757` | `+0.000757` |
+| min / sd | `−0.002799` / `0.000815` | `−0.002799` / `0.000815` |
+| unshuffled control | `−0.006766`, n = 1,364 | `−0.006766`, n = 1,364 |
+| verdict | K-1 PASSES | K-1 PASSES |
+
+**The drill passes.** Two things it also showed, both worth recording:
+
+- **Hard Rule 10 fired, correctly.** The first attempt refused to start — "REFUSING TO RUN:
+  the git tree is dirty" — because the drill's own setup left an untracked path. The gate
+  did its job against a run it had never seen.
+- **A manifest's hash is not itself reproducible, and should not be read as if it were.**
+  The drill's manifest is `6ee1d776…`, not `8838059a…`, because `run_id` is a fresh UUID and
+  the timestamp differs. The recorded sha256 proves *file integrity*; it does not and cannot
+  prove *run reproducibility*. Those are different properties and only the second is what
+  §8's drill establishes.
+
+---
+
+## 2. What has been measured about this instrument, at this resolution, on this feed
+
+### 2.1 No deterministic feature set tried has carried directional information
 
 Three attempts, three designs, three horizons, all negative:
 
@@ -30,7 +147,7 @@ Three attempts, three designs, three horizons, all negative:
 ablation arm, at the one horizon whose per-fold structure cannot be examined, with a
 `p`-value an order of magnitude above its threshold.
 
-### 1.2 The dominant structure in the label is the base rate, and models keep finding it
+### 2.2 The dominant structure in the label is the base rate, and models keep finding it
 
 `[MEASURED]`, H-012:
 
@@ -48,7 +165,7 @@ At `H = 120` the three-feature model calls long on 92.65% of decisions. H-003's 
 the confound that took two hypotheses to expose; this is the same thing, larger, and
 visible in one table.
 
-### 1.3 Fitting real labels costs skill relative to fitting noise
+### 2.3 Fitting real labels costs skill relative to fitting noise
 
 `[MEASURED]`, H-001's unshuffled control against its own shuffled null:
 
@@ -58,7 +175,7 @@ visible in one table.
 fitting a permuted one.** That is the signature of a model finding nothing and paying
 variance for the search.
 
-### 1.4 One real effect exists, and it is below the project's own floor
+### 2.4 One real effect exists, and it is below the project's own floor
 
 `[MEASURED]`, H-009: forward realised volatility is forecastable from these features.
 
@@ -70,7 +187,7 @@ Rejected against a registered threshold of `0.05`. The mechanism is confirmed; t
 magnitude is not. **This is the only place in the project where a pre-registered
 prediction about a mechanism was confirmed.**
 
-### 1.5 Every measured horizon shows the same per-fold shape
+### 2.5 Every measured horizon shows the same per-fold shape
 
 `[MEASURED]`, H-012 full set:
 
@@ -84,7 +201,7 @@ fold 3. H-003 showed it in R-space; H-012 shows it in probability space at two h
 **The pooled figures are mixtures of opposing regimes, not small stable effects** — and the
 consistency of the shape across horizons and metrics is itself a finding.
 
-### 1.6 Instrument facts established along the way
+### 2.6 Instrument facts established along the way
 
 - The clock is New York's, not UTC's — weekly close at 20:00 UTC on 364 weeks and 21:00 on
   184, following US DST exactly.
@@ -96,12 +213,12 @@ consistency of the shape across horizons and metrics is itself a finding.
 
 ---
 
-## 2. What remains untested, named individually
+## 3. What remains untested, named individually
 
 Each of these is a live gap. None is closed by anything above, and no result in this
 project may be reported as if it were.
 
-### 2.1 Capacity
+### 3.1 Capacity
 
 **Untested.** H-011 registered three pre-committed statements — magnitude, sign,
 attribution — and none was ever evaluated. No number exists.
@@ -116,7 +233,7 @@ that ground and not tractability.
 
 `N_claims` still carries H-011's draw. The question was asked; it was not answered.
 
-### 2.2 Features beyond the ten tried
+### 3.2 Features beyond the ten tried
 
 **Untested, and unbounded.** H-012's seven were priors with stated reasons, which is what
 made it a hypothesis rather than a search. That is also its limit: seven priors is seven
@@ -124,7 +241,7 @@ priors. Nothing here bounds what a different set might find, and nothing here li
 claim that "features do not work on this instrument" — only that *these ten* do not, at
 *these three horizons*, on *this feed*.
 
-### 2.3 Session-relative features, blocked by R-001
+### 3.3 Session-relative features, blocked by R-001
 
 **Structurally blocked, not merely untried.** `tests/test_causality.py` refuses any
 registry entry declaring `session_relative=True` while R-001 is open, and the index-scramble
@@ -137,7 +254,7 @@ from the feed is circular and is refused at the point someone would reach for it
 **This is the largest untested feature family**, and everything about intraday structure —
 session opens, position within session, time until the break — lives in it.
 
-### 2.4 The 2015-09-11 era, never evaluated out of sample
+### 3.4 The 2015-09-11 era, never evaluated out of sample
 
 `[MEASURED]`, and it cannot be fixed under the current split rule:
 
@@ -155,22 +272,22 @@ R-001's exposure is narrower than it looks and worth recording precisely: only o
 boundary falls inside any test window, so an error in the era derivation would affect
 **fold 1's composition alone**. Folds 0 and 2–4 are single-era at every horizon.
 
-### 2.5 `H = 120`'s per-fold blindness
+### 3.5 `H = 120`'s per-fold blindness
 
 `[MEASURED]`: 53–55 decisions per fold against a K-6 floor of 150. **All five folds below**,
 pooled `n = 272` clearing K-6 by only 1.8×.
 
 The per-fold sign-stability check — the diagnostic that caught H-003's fold-3 reversal and
-that §1.5 above relies on entirely — **cannot run at that horizon.** A pooled figure there
+that §2.5 above relies on entirely — **cannot run at that horizon.** A pooled figure there
 cannot distinguish a small stable effect from two opposing regimes cancelling. H-012 §C
 pre-committed to that before the run, and the run made it concrete: the best ablation arm
 in the whole project sits at `H = 120`, where it cannot be examined.
 
 ---
 
-## 3. Gates: which are blind, and at what boundary
+## 4. Gates: which are blind, and at what boundary
 
-### 3.1 K-1 — the boundary is now measured, and it is not where §6 predicted
+### 4.1 K-1 — the boundary is now measured, and it is not where §6 predicted
 
 `REPRODUCIBILITY.md` §6 said `train_test_overlap` "becomes detectable as capacity grows".
 H-010 measured it at six capacities. Excess over the clean null at the same rung:
@@ -193,7 +310,7 @@ assumed one.
 `scaler_fit_on_all` is also silent, at every capacity, and always will be: it leaks feature
 distribution and no label information. That silence is correct, not blind.
 
-### 3.2 K-1 can also pass vacuously, and the boundary is 35 parameters
+### 4.2 K-1 can also pass vacuously, and the boundary is 35 parameters
 
 At C-4 (35 parameters) and C-5 (56) the clean null collapses to `−0.129314` and
 `−0.390547`. K-1's three registered conditions all hold at those numbers and the gate
@@ -205,13 +322,13 @@ parameters, within 1.7× of the trip threshold. **The instrument degrades toward
 which is the direction that hides failures. Those passes are recorded as passes that must
 not be cited.
 
-### 3.3 Never evaluated
+### 4.3 Never evaluated
 
 - **K-3** (BSS on sealed holdout) — 0 of 3 openings used. The holdout has never been opened.
 - **K-7** (Deflated Sharpe) — DSR is not built. No claim has reported a Sharpe.
 - **K-8** (live vs backtest calibration) — nothing has run live.
 
-### 3.4 The gate that does not exist
+### 4.4 The gate that does not exist
 
 **The thing that stopped this project is not in the §1 table.** `EVALUATION.md` §2 rung 2
 is a baseline condition, not a kill criterion; K-4 covers rung 1 only, which H-003 passed.
@@ -219,7 +336,7 @@ is a baseline condition, not a kill criterion; K-4 covers rung 1 only, which H-0
 a criterion written after the result it governs is a description of the past wearing the
 costume of a rule.
 
-### 3.5 Known-dark areas that bound every cost figure
+### 4.5 Known-dark areas that bound every cost figure
 
 - The cost model's event set reaches **2.83% of bars**; every other scheduled release is
   priced at the flat floor. The error is *optimistic*, bounded by K-5 and the breakeven
@@ -227,40 +344,9 @@ costume of a rule.
 - **H-005 open.** No result may be described as satisfying `EVALUATION.md` §10.
 - **No economic calendar.** Nothing in the repository knows when CPI, FOMC or ECB land.
 
-### 3.6 The archival policy has never been exercised, and the artefacts are ephemeral
-
-Found while assembling this document, and it is the most consequential gap in it.
-
-`REPRODUCIBILITY.md` §8 requires run manifests "retained for the project's full life", a
-monthly cold-storage export, and a **quarterly restore drill** — "pick a random result from
-≥ 3 months prior and reproduce it from the manifest alone. A reproducibility policy that is
-never exercised is not a policy."
-
-`[MEASURED]`: **`runs/` is in `.gitignore`.** No manifest, no decision log and no result
-file has ever been committed. What is version-controlled is the **sha256 of each manifest,
-recorded in its `HYPOTHESES.md` entry** — and nothing else.
-
-That design is defensible: hashes are the record, artefacts are outputs. But the
-consequences are concrete and are not written down anywhere else:
-
-- **No cold-storage export exists. No restore drill has been run.** Zero of the §8
-  obligations have been discharged.
-- The manifests live on one ephemeral container's disk. **H-009's manifest,
-  `dc0f40bc-422c-433f-8790-4567a0408843`, is already absent from it** — it was produced in a
-  parallel session and is not on this filesystem. Its hash is in the registry; the file it
-  hashes is gone.
-- Present on disk now: 5 evaluation manifests (H-001, H-003, H-007 ×2, H-012), 2
-  harness validations, and the H-010 and H-012 row data. All produced on clean trees. **None
-  of it is in git.**
-
-**A hash with nothing left to check it against is a weaker record than it looks.** It
-proves a file existed with those contents; it cannot reproduce the number. This bears
-directly on §7: "archive with the registry intact" is not currently a thing this repository
-can do, and saying so is more useful than assuming it.
-
 ---
 
-## 4. Instrument defects: seven, and the pattern held every time
+## 5. Instrument defects: seven, and the pattern held every time
 
 The count is **seven**, not six — H-010 contributed two unrelated ones, which is the likely
 source of any undercount.
@@ -296,7 +382,7 @@ an external anchor rather than for more error handling.
 
 ---
 
-## 5. What may be asserted, and at what strength
+## 6. What may be asserted, and at what strength
 
 | assertion | strength |
 |---|---|
@@ -305,12 +391,12 @@ an external anchor rather than for more error handling.
 | These features forecast volatility, sub-threshold | **measured**, H-009, `+0.024157`, `p = 0.0150`, mechanism confirmed 5/5 |
 | K-1 cannot detect train/test overlap in this estimator family | **measured** at six capacities |
 | Gold is unpredictable at these horizons | **not asserted.** Nothing here supports it |
-| Larger combiners would not help | **not asserted.** Untested — §2.1 |
-| Other feature families would not help | **not asserted.** Untested — §2.2, §2.3 |
+| Larger combiners would not help | **not asserted.** Untested — §3.1 |
+| Other feature families would not help | **not asserted.** Untested — §3.2, §3.3 |
 
 ---
 
-## 6. The honest position on the original question
+## 7. The honest position on the original question
 
 **Does this instrument, at this horizon, carry directional information a deterministic
 feature set can extract?**
@@ -342,7 +428,7 @@ here" is not supported and has never been tested.
 
 ---
 
-## 7. The case for stopping
+## 8. The case for stopping
 
 `RESEARCH.md` §8 was written for this moment:
 
@@ -357,7 +443,7 @@ here" is not supported and has never been tested.
 registry that made every answer auditable.** By §8's own standard this is a success, and
 the argument for stopping is straightforward:
 
-**What stopping now costs.** Four named untested directions (§2). Each is real, and none is
+**What stopping now costs.** Four named untested directions (§3). Each is real, and none is
 cheap: R-001 needs an external source this project cannot generate; the 2015 era needs a
 different split rule and therefore a new geometry registration; capacity needs a
 well-conditioned design and a fresh `N_claims` draw; more features are unbounded by
@@ -389,20 +475,17 @@ untested directions are the deliverable. The `N_claims` denominator and the pre-
 thresholds are what make the negative result worth something, and they only retain that
 value if nothing further is drawn against them without a reason that is not "one more idea".
 
-**One thing stopping requires, and it is not optional.** §3.6: `runs/` is gitignored, no
-cold-storage export exists, and no restore drill has ever run. "Archive with the registry
-intact" is not currently something this repository can do — the registry survives, the
-artefacts it hashes do not, and one of them is already gone. **Discharging
-`REPRODUCIBILITY.md` §8 once — export the manifests, run one restore drill, commit the
-result — is the work that turns this from a set of claims into an archive.** It is
-engineering hygiene, not a hypothesis: no registration, no `N_claims` draw, and it should
-happen whether or not anything else does.
+**The one thing stopping required has been done.** §1: `runs/` is un-ignored and guarded,
+every surviving manifest is committed and verified against its recorded hash, the single
+unrecoverable loss is named, and the restore drill has been run once and passed. That was
+engineering hygiene rather than a hypothesis — no registration, no `N_claims` draw — and it
+is what turns this from a set of claims into an archive.
 
 Beyond that, no next slice is proposed here. That is the point.
 
 ---
 
-## 8. Counters at the close
+## 9. Counters at the close
 
 ```
 Registered ......... 12     Accepted 2 (H-001, H-003 — reading withdrawn)
@@ -412,13 +495,97 @@ Registered ......... 12     Accepted 2 (H-001, H-003 — reading withdrawn)
 N_claims ........... 6      H-003, H-004, H-007, H-009, H-011, H-012
   BH rank-1 ........ 0.00833
 Holdout ............ 0 / 3 openings used
-Runs ............... 5 evaluation manifests + 2 harness validations on disk, all on
-                     clean trees. NONE version-controlled -- runs/ is gitignored and
-                     only the sha256s are in the registry. See §3.6.
+Runs ............... 5 evaluation manifests + 2 harness validations, all on clean trees,
+                     all now committed and verified against their recorded hashes.
+                     1 referenced manifest unrecoverable (H-009). See §1.
 Open review items .. R-001 (session eras), H-005 (spread not calibratable)
-Archival ........... REPRODUCIBILITY.md §8: 0 exports, 0 restore drills. Never exercised.
+Archival ........... REPRODUCIBILITY.md §8 discharged 2026-07-28: archive committed and
+                     guarded, loss recorded, 1 restore drill run and passed.
 ```
 
 Build Order steps 1–6 are complete. **Step 7 — the first agent — was never licensed**, and
 on the evidence above it should not be: `EVALUATION.md` §2 makes rungs 3–5 meaningless
 until rung 2 is passed, and rung 2 was failed by a model that could not beat always-long.
+
+---
+
+## 10. Final state of the registry
+
+**For whoever picks this up.** Everything below is the state as of 2026-07-28. Nothing here
+is in flight, nothing is waiting on a decision, and no work is proposed.
+
+### 10.1 Every hypothesis, and exactly what it established
+
+| ID | class | status | what it established |
+|---|---|---|---|
+| **H-001** | gate | **ACCEPTED** | K-1 does not trip. Shuffled-label null mean BSS `−0.000855` across 30 seeds. Reproduced by the §1.5 restore drill. Certifies *no label reaches the model along this path at this capacity* — not the absence of all leakage. |
+| **H-002** | gate | **STANDING** | Temporal causality of every feature. Asserted on every commit. The day it fails is the day the pipeline halts. |
+| **H-003** | claim | **ACCEPTED, reading withdrawn** | Signal beat random entry by `+0.060398 R`, `p = 0.0204`. The run stands and its arithmetic holds; **the directional inference does not** — H-007 showed the difference was long bias. Status left as ACCEPTED on purpose: the registry records what was done, not what is currently believed. |
+| **H-004** | claim | **REGISTERED, never run** | LLM synthesis vs deterministic combination. Never reached — the ladder halted first. Carries an `N_claims` draw. |
+| **H-005** | gate | **REGISTERED, open** | Registered deviation from `EVALUATION.md` §10: spread is not calibratable on this feed. **No result may be described as satisfying §10 while this is open.** The 75-point floor is raisable only. |
+| **H-006** | gate | **REGISTERED** | The evaluation window `2015-09-11 → 2026-07-26` is a declared boundary, not a truncation. |
+| **H-007** | claim | **REJECTED** | Always-long matched the signal: `−0.000141 R`, `p = 0.5041`. This is what stopped the project, and it is at a ladder rung with no K-code. |
+| **H-008** | gate | **REGISTERED, unrun, sweep values fixed** | The 1.5× ATR stop/target sweep: **0.75, 1.0, 1.5, 2.0, 3.0**, fixed before any of them produced a number. Its Order clause makes it conditional on H-007 passing, which it did not. **The values stay fixed for whenever there is a directional reading to test the robustness of.** Not VOID — nothing about it was invalidated, its subject was. |
+| **H-009** | claim | **REJECTED** | Volatility is forecastable: `BSS +0.024157`, `p = 0.0150`, mechanism confirmed 5/5 folds, `realized_vol_24` carrying 97.2%. Below the registered `0.05` floor. **Its manifest is the one unrecoverable artefact** — §1.4. |
+| **H-010** | gate | **REJECTED** | K-1 re-measured at six capacities. Passes at 4/7/10 parameters; condition (iv) unsatisfiable at 20/35/56. Established that `train_test_overlap` is not detectable at any capacity in this estimator family, and that K-1 can pass *vacuously*. |
+| **H-011** | claim | **REGISTERED, unrun, ABANDONED** | The capacity question. Three pre-committed statements, **none ever evaluated — no number exists.** Abandoned on the ground that three columns is a very small hypothesis class, **not** on tractability (that reasoning was corrected after H-012). **Its `N_claims` draw stands.** Capacity is untested and must never be reported as excluded. |
+| **H-012** | claim | **REJECTED** | Ten features, eleven parameters, three horizons. All four pre-registered no-conditions hold. The answer is no for this feature set at these horizons. |
+
+### 10.2 Counters
+
+```
+Registered ......... 12     Accepted 2 (H-001; H-003 — reading withdrawn)
+                            Rejected 4 (H-007, H-009, H-010, H-012)
+                            Standing 1 (H-002)
+                            Registered and unrun 5 (H-004, H-005, H-006, H-008, H-011)
+N_claims ........... 6      H-003, H-004, H-007, H-009, H-011, H-012
+  BH rank-1 ........ 0.05 x 1/6 = 0.00833
+Holdout ............ 0 / 3 openings used — never opened
+Runs ............... 5 evaluation manifests + 2 harness validations, all on clean trees,
+                     all committed. 1 referenced manifest unrecoverable (H-009).
+Restore drills ..... 1, passed (H-001, §1.5)
+```
+
+**Nothing in the family clears `EVALUATION.md` §9.** At `m = 6` the step-up finds `k = 2`:
+H-009 at `0.0150` and H-003 at `0.0204 ≤ 0.025`. Both clear the correction; neither reading
+survives on substance — H-009 failed its magnitude threshold and H-003's direction was
+withdrawn by H-007.
+
+### 10.3 Open review items — both stay open
+
+- **R-001** — `session.eras` has never been checked against an external source. **Blocking
+  condition intact**: `tests/test_causality.py` refuses any feature declaring
+  `session_relative=True` while it is open, and the index-scramble test falsifies that
+  declaration rather than trusting it. Re-deriving the eras from the feed does not close it
+  and is refused at the point someone would reach for it. Closing it needs an FxPro
+  announcement or equivalent external source.
+- **H-005** — spread is not calibratable on this feed. Open. No §10 claim may be made.
+
+### 10.4 What a reader must not conclude
+
+Three statements are easy to reach and none is supported:
+
+1. **"Gold is unpredictable at these horizons."** Not tested. Ten features on one instrument
+   at one resolution is a small search.
+2. **"A larger combiner would not help."** Not tested — §3.1. H-011's draw was spent asking;
+   the question was never answered.
+3. **"Capacity was excluded."** Explicitly false. It was **abandoned**, and the difference
+   is recorded in H-011's entry precisely because it is the thing a later reader will
+   collapse.
+
+### 10.5 What is safe to conclude
+
+- These ten features carry no directional information at `H ∈ {4, 24, 120}` on this feed,
+  by four pre-registered criteria that were written before any feature was named.
+- The three-feature model's apparent edge was long bias.
+- These features forecast volatility, significantly, below the project's own floor.
+- K-1 cannot detect train/test overlap in this estimator family, at any capacity reachable
+  within it.
+- The pipeline reproduces: H-001 was re-derived from its manifest alone, bit for bit.
+
+### 10.6 If someone restarts this
+
+Not a proposal — a statement of what the record obliges. Any new work starts by reading
+`RESEARCH.md`, `DATA_CONTRACT.md`, `EVALUATION.md`, this file, and `HYPOTHESES.md` §0, and
+by accepting that `N_claims` **starts at 6, not at 0**. The denominator does not reset
+because someone new is looking. That is the whole reason it is written down.

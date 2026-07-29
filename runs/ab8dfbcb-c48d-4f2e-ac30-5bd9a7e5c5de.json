@@ -1,0 +1,27 @@
+{
+  "anonymisation_protocol": "none",
+  "cost_model_deviation": "Costs use H-005's registered substitute for EVALUATION.md \u00a710, not \u00a710 as written: a constant spread floor of 75 points (5x the observed demo quote) with \u00a710's event multiplier on top, because the demo feed's flat 15-point quote is not a payable spread and no session-dependent curve can be fitted from it. No result from this run may be described as satisfying \u00a710. Admissible at RESEARCH.md Tier 2 at best while H-005 is open.",
+  "cost_model_version": "ff16183e7684e0fc3571594c3bb698c3b91394f312878c7a149e635c0d2766f5",
+  "cumulative_hypothesis_count_n_claims": 3,
+  "data_snapshot_sha256": "8d3221674f9360e46b23b6a246dc4d87f7a399fb52fbbb528bef72fc8c210453",
+  "data_window": {
+    "end": "2026-07-27 17:00:00+00:00",
+    "start": "2015-09-10 22:00:00+00:00"
+  },
+  "env_lock_sha256": "ff88c884e49bc74a0d6c1cea8221a96ca6a65878d9806c7ef76d386c9059d886",
+  "evaluation_mode": "walk_forward",
+  "feature_set_version": "0ac4246e4abc5196976be13c94ef67620fb5d98bc4e713e51a2057d860a11a84",
+  "git_commit": "61899451174d97fd980eca0a2326b729f17e787f",
+  "git_dirty": false,
+  "holdout_openings_remaining": 3,
+  "hypothesis_id": "H-007",
+  "llm": null,
+  "notes": "rung 2. difference -0.000141 R, p=0.5041; FAIL \u2014 H-003 directional reading withdrawn; H-003 BH contingency at N_claims=3: does not survive; split 0.50, 5 folds.",
+  "run_id": "ab8dfbcb-c48d-4f2e-ac30-5bd9a7e5c5de",
+  "run_type": "evaluation",
+  "runtime_seconds": 9.638365700000008,
+  "seeds": {
+    "bootstrap": 1337
+  },
+  "timestamp_utc": "2026-07-28T11:33:23.558931+00:00"
+}
