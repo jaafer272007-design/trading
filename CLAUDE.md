@@ -77,6 +77,52 @@ Steps 4 and 5 answer the project's central question before any agent exists. If 
 
 ---
 
+## `src/risk` — the risk and cost layer, and why it is outside all of the above
+
+**Settled. Do not re-litigate.** This section exists so that the next person reading `src/risk` does not have to work out from first principles whether it belongs to the research programme. It does not.
+
+### What it is
+
+Deterministic accounting on live MT5 account state, addressing the two mechanisms that actually emptied the account this project has a user for: an unbounded drawdown, and a two-month hold whose financing cost consumed what the drawdown left. Per-position carry, cumulative cost since entry, time in trade, projected days to the broker's stop-out, position sizing from a risk percentage and ATR, a daily loss limit and a cap on concurrent positions.
+
+Neither mechanism is a prediction problem, and neither is addressed by having a signal.
+
+### The reading
+
+| | |
+| :---- | :---- |
+| **Joins no pipeline** | Nothing under `src/backtest`, `src/data`, `src/evaluation`, `src/features`, `src/labels`, `src/metrics` or `src/models` imports it. The dependency runs one way: `risk` imports the two registered swap constants from `backtest.costs` **in order to compare against them**, and nothing else. |
+| **Makes no market claim** | No `hypothesis_id`, no registration, **no `N_claims` draw**. `N_claims` stays at 6. Nothing this layer produces may be cited for or against anything in `HYPOTHESES.md`. |
+| **Predicts nothing** | No direction, no probability, no signal, no edge, and no view on whether a trade is a good idea. Days-to-stop-out is arithmetic under a stated constant-price assumption — a bound, not a forecast. |
+| **Never trades** | `order_send` appears nowhere in this repository, per `RESEARCH.md` §2. Every MT5 call is a read or a pure calculation. |
+| **Needs no backtest** | It is arithmetic on published account state. It needs tests, and has them. A backtest of it would be a backtest of addition. |
+
+### What that changes about the rules
+
+Hard Rule 1 (causal tests) governs **features**. There are none here. Hard Rules 3, 4, 7, 8 and 9 govern **registered evaluation runs**. This layer produces none.
+
+The constants in `src/risk/config.py` — 1% per trade, 3% a day, 2 positions, a 48-hour alert — are **operating limits on a live account, not parameters of a claim.** Changing one requires no procedure beyond deciding to, and `RESEARCH.md` §5.2 on post-hoc constant changes does not apply to them. They are provisional pending the probe. This is the opposite of `EVALUATION.md` §1 and of H-008's fixed sweep, and the difference is the point.
+
+Hard Rules 2, 6 and 10, and everything in Style, apply here exactly as everywhere else.
+
+### The one thing this layer says *about* the registry
+
+`backtest.costs` charges 20 points long and 8 short. Those are H-005's **pessimistic substitute**, chosen when the feed could not be calibrated — never this broker's rate, and until a live terminal is read, the claim that they overstate real financing is untested.
+
+`src/risk/swap.py` measures it, on a per-night and a per-calendar-week basis, and `SwapDivergence` is a **first-class field of the risk report** rather than a diagnostic. If the broker's real financing exceeds the registered figure, every cost-dependent result in `HYPOTHESES.md` was computed against costs that were too low, and that is a finding about the registry which must surface where someone will see it.
+
+Note the weekly basis. `backtest.costs.rollovers_crossed` counts five rollovers a week and has no triple-swap concept; a broker charges seven nights across those five. At an identical per-night rate the registered model still understates a week's carry by two sevenths, so a broker charging *less* than 20 a night can still be more expensive than the registry assumes.
+
+### Enforcement
+
+`RETROSPECTIVE-2.md` §1.2: **a rule that is not a test is a rule you are relying on luck to follow.** Every statement above is asserted in `tests/risk/test_scope.py` and fails the build rather than decaying into prose.
+
+### Acceptance
+
+`scripts/risk_monitor.py --probe` on a **demo** account, on Windows. Until the adapter has been read against a live terminal once it is unverified, and nothing that depends on it should be trusted. The probe prints every field read, the provenance of every derived number, and every refusal.
+
+---
+
 ## Style
 
 - Python 3.12, type-hinted, `ruff` \+ `mypy` clean  

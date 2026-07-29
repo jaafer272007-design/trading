@@ -105,6 +105,10 @@ convention = "google"
 # MetaTrader5 module.
 "scripts/capture_ticks.py" = ["ANN401"]
 "scripts/mt5_export.py" = ["ANN401"]
+# The risk adapter, for the same reason: its one Windows-only dependency
+# ships no stubs and returns bare structured arrays. Everything it computes
+# lives in src/risk, which is fully typed and has no such exemption.
+"scripts/risk_monitor.py" = ["ANN401"]
 
 # ---------------------------------------------------------------------------
 # mypy — strict
