@@ -346,10 +346,10 @@ costume of a rule.
 
 ---
 
-## 5. Instrument defects: seven, and the pattern held every time
+## 5. Instrument defects: eight, and the pattern held every time
 
-The count is **seven**, not six — H-010 contributed two unrelated ones, which is the likely
-source of any undercount.
+The count is **eight**. Seven were defects in code. **The eighth, added 2026-07-29, is a
+defect in a *claim about* code** — and it is the only one that reached a merged commit.
 
 | # | defect | caught by |
 |---|---|---|
@@ -360,19 +360,55 @@ source of any undercount.
 | 5 | the breakeven solver's false precision — "1,076.2 ± 3.9" on a curve with three sign changes | a nine-point probe grid |
 | 6 | K-1's **vacuous pass** at 35 and 56 parameters | the clean null measured beside the verdict |
 | 7 | **separability** costing 426,723 iterations against 314 at identical conditioning | an independent IRLS solve |
+| 8 | **`rollovers_crossed` "counts five rollovers a week"** — it counts seven | running the function on a known week |
 
-**The pattern, unchanged across all seven:**
+**The pattern, unchanged across all eight:**
 
 - Every one was **fluent**. No warning, no `NaN`, no stack trace.
-- **Four of seven had a self-check that agreed with them**, because the self-check shared
+- **Four of eight had a self-check that agreed with them**, because the self-check shared
   the assumption. In #6 the self-check *was the gate*, returning PASS.
 - **None was caught by re-reading the code.** Each needed an external reference or an
   adversarial fixture: a published calendar, `zoneinfo`, a corrupted input, a probe grid, a
-  second solver.
-- **Five of seven made the data look worse than it is**, not better. The failure mode is not
+  second solver — and, for #8, simply calling the function.
+- **Five of eight made the data look worse than it is**, not better. The failure mode is not
   optimism. It is confidence.
-- **Two of seven were inside machinery written to prevent a defect** — the probe grid and
+- **Two of eight were inside machinery written to prevent a defect** — the probe grid and
   the convergence rule. Instrument count is not monotone in instrument care.
+
+### 5.1 Why #8 is a different kind, and the worse kind
+
+Defects 1-7 were wrong **code**. #8 was correct code with a wrong **sentence about it**, in
+a docstring, in a constant's comment, in a PR body, and in `CLAUDE.md`. Three consequences
+follow that the first seven do not have.
+
+**It could not fail.** A wrong computation eventually meets an input that embarrasses it.
+A wrong sentence computes nothing, so nothing can contradict it. The only thing that ever
+would have was somebody running `rollovers_crossed` on a known week, which took one
+command.
+
+**It propagated through review.** #1-7 were caught before or during the run that used them.
+#8 was written, reviewed, described in a merged pull request, and copied into three more
+documents — each copy making it look better attested. **The number of places a claim
+appears is not evidence for it**, and this project now has an instance where it looked
+like evidence.
+
+**Its blast radius was arithmetic downstream.** It inflated the reported weekly divergence
+by 7/5 and produced a specific false claim — that a broker charging 15 points a night
+already exceeds the registry — which is exactly the kind of headline number that gets
+quoted onward.
+
+**The lesson, and it generalises §1.2 rather than repeating it.** §1.2: *a rule that is not
+a test is a rule you are relying on luck to follow.* One step out: **an assertion about
+someone else's code, with no test behind it, is an assertion you are relying on luck for.**
+The fix is the same shape and took four lines — `tests/risk/test_clock.py` now calls
+`rollovers_crossed` over a Monday-to-Monday span and asserts 7, over a fortnight and
+asserts 14, and over a weekend and asserts 3. Any change to that function now fails the
+build in the layer that depends on it.
+
+**Where the pattern was already visible.** `mt5_probe.py`'s correction log says it exactly:
+*"a measurement tool manufactures findings until the tool itself is tested."* #8 is the
+same sentence with "measurement tool" replaced by "claim". Both were fluent, both were
+internally consistent, and both were wrong.
 
 **H-012 added none, and the reason sharpens the pattern.** Its one failure was
 `frame_sha256` raising on a string column: a traceback, at the manifest step, after every
@@ -644,11 +680,12 @@ body, and it is false.**
 per fortnight. The registered night **count** is right. Only the timing differs, and it
 cancels over whole weeks.
 
-**The transferable part.** §1.2 recorded that a rule which is not a test is a rule you are
-relying on luck to follow. This is the same failure one step out: **an assertion about
-someone else's code, in a docstring, with no test behind it.** It survived review, a PR
-body, and a merge. `tests/risk/test_clock.py` now measures the count against the real
-function, so the premise fails the build rather than propagating.
+**The transferable part is in §5.1**, where this is recorded as **instrument defect #8** —
+the first in the table that is a defect in a *claim about* code rather than in code, and
+the only one that reached a merged commit. §1.2 recorded that a rule which is not a test is
+a rule you are relying on luck to follow; this is the same failure one step out.
+`tests/risk/test_clock.py` now measures the count against the real function, so the premise
+fails the build rather than propagating.
 
 ### 11.4 What §10 should now be read as saying
 

@@ -765,6 +765,13 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> Non
                         "carry_paid": c.carry_paid,
                         "floating_pnl": c.floating_pnl,
                         "price": price,
+                        # Recorded so the analysis can recover the SERVER
+                        # weekday, which is what identifies the triple-swap
+                        # day. Without it the multiplier is still inferable but
+                        # the weekday it lands on is not.
+                        "server_offset_hours": (
+                            report.terminal.server_utc_offset_hours
+                        ),
                         "equity": report.account.equity,
                         "currency": report.account.currency,
                     },
