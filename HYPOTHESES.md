@@ -1125,6 +1125,39 @@ risk management" actually are**
 > the registry a record of what is currently believed rather than of what was done, and
 > the second is the only one of the two that is auditable.
 
+**2026-07-29 — the cost treatment is wrong, and "its arithmetic is unchanged" was too strong**
+
+> Appended, not edited. No re-run, no `N_claims` draw.
+>
+> The withdrawal above says "the run happened as recorded and its arithmetic is
+> unchanged." That is true of the arithmetic *as executed* and it has been read as more
+> than it says. **The inputs to that arithmetic are now known to be wrong**: see H-005,
+> 2026-07-29. Financing on this broker's gold is price-dependent rather than a fixed
+> points rate, and the short side is credited where the model charged it.
+>
+> **Direction of the correction, which is determinable.** This entry's own cost table
+> reports realised swap of **0.000738 R** per decision for the signal arm and
+> **0.000672 R** for the random-entry control. The signal arm was **56.2% long**; a random
+> arm is 50% long by construction. Correcting to 67.9 charged long and 27.0 credited short:
+>
+> | arm | registered blended rate | corrected rate | factor | swap, corrected |
+> |---|---|---|---|---|
+> | signal (56.2% long) | 14.744 | 26.334 | **1.786x** | 0.000738 → 0.001318 R |
+> | random (50% long) | 14.000 | 20.450 | **1.461x** | 0.000672 → 0.000982 R |
+>
+> The signal arm is penalised **0.000271 R more** than the control, because it is more long
+> and the long side is where the model understated. **The `+0.060398 R` difference becomes
+> `≈ +0.060127 R`** — a change of **0.45%** of the effect.
+>
+> **What this changes: nothing that matters.** The correction is four orders of magnitude
+> smaller than the effect and cannot move `p = 0.0204`. **The directional reading stays
+> withdrawn on H-007's grounds**, which are substantive and untouched by any cost figure.
+>
+> **Stated assumptions**, because the numbers above are arithmetic and not a re-run: the
+> mode-2 reading in H-005 finding 3; equal nights-held per decision across directions
+> within an arm; a 50/50 direction split in the random control. **No p-value is
+> recomputed** — that needs the per-block data and a run, and no run is being made.
+
 ### H-004 — LLM synthesis vs. deterministic combination (SC-1)
 
 - **Registered:** 2026-07-26 14:32 UTC
@@ -1352,6 +1385,77 @@ risk management" actually are**
 
 - **Closes via:** a new hypothesis under exit condition (a) or (b). Never by editing this
   entry.
+
+**2026-07-29 — the substitute is measured, and its pessimism assumption is false**
+
+> Appended, not edited. This gate's conditions (i)–(iii) are unchanged and no run is
+> re-run. **This is a broker measurement, not an evaluation run: no `hypothesis_id`, no
+> `N_claims` draw, `N_claims` stays at 6.** It is recorded here because H-005 is the
+> entry that carries the substitute, and the substitute has now been read against a live
+> terminal for the first time.
+>
+> `[MEASURED]` `scripts/risk_monitor.py --probe`, FxPro demo, symbol `GOLD`:
+>
+> | field | value |
+> |---|---|
+> | `swap_mode` | **2 — `SYMBOL_SWAP_MODE_CURRENCY_SYMBOL`** |
+> | `swap_long` | **−67.9** |
+> | `swap_short` | **+27.0** |
+>
+> **Three findings, and they are different in kind from one another.**
+>
+> **1. The structure is wrong, not just the magnitude — and this is the substantive one.**
+> In `CURRENCY_SYMBOL` the rate is denominated in the symbol's **base** currency, which
+> for gold is ounces. The account-currency charge is therefore **proportional to the gold
+> price at the moment of charging**: a long held through a rising market pays a rising
+> dollar carry. `backtest.costs` charges a **fixed points rate**. No value of that
+> constant would have been correct, because the registered model has no term that varies
+> with price. This is a difference in kind and it cannot be absorbed by re-tuning
+> anything.
+>
+> The layer's refusal to convert is what surfaced it. `risk.swap.declared_swap` returns a
+> `Refusal` rather than picking a price to convert at, and the refusal names the
+> structure. Had it defaulted, the structure would have been buried inside a plausible
+> number.
+>
+> **2. The sign is asymmetric. Long pays; short is credited.** `backtest.costs.swap_points`
+> charges **both** directions, and says so in its own docstring, on the stated ground that
+> a credit is an optimistic assumption about a rate this project had never observed. It
+> has now been observed and it is a credit. Charging the short side is a structural error
+> in the cost model, independent of magnitude and independent of finding 1.
+>
+> **3. The magnitude is roughly 3.4x on the long side, under a stated reading.** The
+> mode-2 figure cannot be converted from the field alone — 67.9 ounces a night per lot is
+> not a possible charge, so the number is not literally base-currency units at face value.
+> Read as an effective charge in the deposit currency per lot per night, which the
+> magnitude supports and the field cannot confirm:
+>
+> | side | registered | FxPro `GOLD` | annualised on a 100 oz lot near 2,400 |
+> |---|---|---|---|
+> | long | 20.0 charged | **67.9 charged** | **3.0% → 10.3%** |
+> | short | 8.0 charged | **27.0 credited** | **1.2% → −4.1%** |
+>
+> Both measured figures are plausible financing rates for a retail gold CFD. **The
+> registered one is not**: 3.0% a year on a gold long is below every dollar funding rate
+> in the H-006 window. That asymmetry of plausibility is evidence for the reading, and
+> **evidence is not a measurement.** One week of a real position settles it, and until it
+> does the declared route stays refused.
+>
+> **A correction to a claim made when this layer was built.** The `src/risk` scope note
+> and its swap module asserted that `backtest.costs.rollovers_crossed` "counts five
+> rollovers a week and has no triple-swap concept", so that the registered model
+> understated a week's carry by two sevenths *on top of* any magnitude error. **That was
+> wrong**, asserted from the function's name without reading its body. `[MEASURED]`
+> `rollovers_crossed` counts **every** calendar day's 17:00 New York boundary, weekends
+> included: **7 over a Monday-to-Monday span, 14 over two weeks.** The registered night
+> **count** per calendar week is right. What differs is *when* the nights land — nothing
+> is charged at the weekend, three nights are charged on one weekday — and the two miss in
+> opposite directions and cancel over whole weeks. `tests/risk/test_clock.py` now measures
+> the count against the real function so the premise is pinned rather than believed.
+>
+> **What this does not do.** It does not re-open this gate's conditions, it does not change
+> `SPREAD_FLOOR_POINTS`, and **it triggers no re-run.** The two cost-dependent results
+> carry their own dated notes: see H-003 and H-007. Nothing here is a claim about markets.
 
 ### H-006 — The evaluation window is a declared boundary, not a truncation
 
@@ -1814,6 +1918,49 @@ becomes an explicit term**
 >
 > H-008 is not run: its own Order clause makes it conditional on this passing, and a
 > robustness sweep of a retracted reading measures nothing.
+
+**2026-07-29 — the cost treatment is wrong, and the correction moves toward the signal**
+
+> Appended, not edited. No re-run, no `N_claims` draw. **The verdict above is unchanged.**
+>
+> This is recorded prominently because it is **the only correction this project has found
+> that moves a number in the signal's favour**, and a record that buried it would be
+> selecting which corrections to publish.
+>
+> Financing on this broker's gold is price-dependent and credits the short side: H-005,
+> 2026-07-29. This entry's cost table reports realised swap of **0.000738 R** for the
+> signal and **0.000959 R** for always-long. Always-long is **100% long**; the signal is
+> **56.2% long**. The long side is exactly where the registered model understated, so
+> always-long is penalised far harder:
+>
+> | arm | registered rate | corrected rate | factor | swap, corrected |
+> |---|---|---|---|---|
+> | signal (56.2% long) | 14.744 | 26.334 | **1.786x** | 0.000738 → 0.001318 R |
+> | always-long (100% long) | 20.000 | 67.900 | **3.395x** | 0.000959 → 0.003256 R |
+>
+> Always-long worsens by **0.001737 R more** than the signal. The measured difference was
+> the signal **behind by 0.000141 R**; corrected it is the signal **ahead by
+> ≈ 0.001596 R**. **The sign of the point estimate flips.**
+>
+> **The verdict does not, and the reason is in the numbers already recorded here.** The
+> registered block-10 bootstrap gave a 95% CI of **[−0.074192, +0.072810]**, a half-width
+> of about **0.0735 R**. The correction is **0.001737 R — 2.4% of that half-width.** It
+> moves a point estimate that was never distinguishable from zero to a different point
+> estimate that is still not distinguishable from zero. `p = 0.5041` before; there is no
+> basis on which 2.4% of a confidence interval turns a coin flip into a result.
+>
+> **This must not be read as reviving the signal, for three independent reasons.**
+>
+> 1. The corrected difference is **2.4% of its own confidence interval**. It is noise.
+> 2. It is **2.6%** of H-003's `+0.060398 R`, the effect H-007 attributed to long bias.
+>    Attributing 2.6% of it to a cost artefact leaves the attribution intact.
+> 3. **H-012 looked for directional information directly** — ten features, three horizons,
+>    four pre-registered criteria — and did not find it. A financing correction cannot
+>    manufacture direction that a direct test looked for and failed to see.
+>
+> **Stated assumptions**: the mode-2 reading in H-005 finding 3; equal nights-held per
+> decision across directions within the signal arm. **No p-value is recomputed**; that
+> needs a run, and none is being made. **`REJECTED` stands. H-008 stays unrun.**
 
 ---
 

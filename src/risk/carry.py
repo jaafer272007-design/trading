@@ -30,14 +30,24 @@ the two** and says so. That is the conservative direction, and in a layer whose
 entire purpose is to stop an account being surprised by a cost, the
 conservative direction is the correct default rather than a bias.
 
-Why the rate is per calendar day rather than per rollover
----------------------------------------------------------
+Why the rate is per calendar day rather than per charging event
+--------------------------------------------------------------
 
-See :mod:`risk.clock`. A week costs seven nights charged across five
-rollovers, so a projection that counts rollovers and multiplies by a nightly
-rate understates a multi-day hold by two sevenths. A per-calendar-day rate
-absorbs the triple-swap convention, the weekend, holidays and any rate change
-during the hold, without modelling any of them.
+See :mod:`risk.clock`. A broker charges five times a week, one of them tripled,
+and nothing at the weekend. A per-calendar-day rate absorbs that schedule, plus
+holidays and any rate change during the hold, without modelling any of them --
+and it needs no knowledge of which weekday carries the triple charge.
+
+When the rate is itself price-dependent
+---------------------------------------
+
+`[MEASURED]` FxPro's gold uses ``swap_mode = 2``, where the charge is
+denominated in ounces and the dollar cost therefore moves with the gold price.
+For such a symbol the constant-price assumption on every projection below does
+double duty: it holds equity constant *and* it holds the financing rate
+constant. A long held into a rising market pays more than the projection says,
+and :attr:`PositionCarry.notes` says so on every position whose symbol is in one
+of those modes.
 """
 
 from __future__ import annotations
@@ -59,7 +69,7 @@ from risk.state import (
     SymbolTerms,
     value_per_point_per_lot,
 )
-from risk.swap import DeclaredSwap
+from risk.swap import DeclaredSwap, SwapMode
 
 
 class CarrySource(StrEnum):
@@ -326,6 +336,20 @@ def position_carry(
     projections = tuple(
         _project(h, rate, paid, equity, position, terms, per_point) for h in horizons
     )
+
+    if terms is not None:
+        try:
+            swap_mode: SwapMode | None = SwapMode(terms.swap_mode)
+        except ValueError:
+            swap_mode = None
+        if swap_mode is not None and swap_mode.is_price_dependent:
+            notes.append(
+                f"swap_mode is {swap_mode.name}, so the financing rate is "
+                f"itself a function of price -- the projections below hold "
+                f"price constant for the rate as well as for equity, and a "
+                f"rising market raises the dollar carry on a long above every "
+                f"figure shown"
+            )
 
     if paid > 0 and position.profit != 0:
         notes.append(

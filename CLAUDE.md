@@ -107,11 +107,25 @@ Hard Rules 2, 6 and 10, and everything in Style, apply here exactly as everywher
 
 ### The one thing this layer says *about* the registry
 
-`backtest.costs` charges 20 points long and 8 short. Those are H-005's **pessimistic substitute**, chosen when the feed could not be calibrated — never this broker's rate, and until a live terminal is read, the claim that they overstate real financing is untested.
+`backtest.costs` charges 20 points long and 8 short. Those are H-005's **pessimistic substitute**, chosen when the feed could not be calibrated — never this broker's rate.
 
-`src/risk/swap.py` measures it, on a per-night and a per-calendar-week basis, and `SwapDivergence` is a **first-class field of the risk report** rather than a diagnostic. If the broker's real financing exceeds the registered figure, every cost-dependent result in `HYPOTHESES.md` was computed against costs that were too low, and that is a finding about the registry which must surface where someone will see it.
+**It has now been read. `HYPOTHESES.md` H-005, 2026-07-29, is the record; this is the summary.** FxPro `GOLD` reports `swap_mode = 2` (`CURRENCY_SYMBOL`), `swap_long = -67.9`, `swap_short = +27.0`. Three findings, different in kind:
 
-Note the weekly basis. `backtest.costs.rollovers_crossed` counts five rollovers a week and has no triple-swap concept; a broker charges seven nights across those five. At an identical per-night rate the registered model still understates a week's carry by two sevenths, so a broker charging *less* than 20 a night can still be more expensive than the registry assumes.
+1. **The structure is wrong.** A base-currency rate makes the account-currency charge proportional to the gold price. The registered model has no term that varies with price, so **no value of the constant would have been right.** The layer's *refusal* to convert is what surfaced this — a default would have buried it inside a plausible number.
+2. **The sign is asymmetric.** Long pays, short is credited. `swap_points` charges both directions on the stated ground that a credit is an optimistic assumption about an unobserved rate. It is now observed.
+3. **The magnitude is roughly 3.4x long**, under a reading the field alone cannot confirm. A week of a real position settles it.
+
+`SwapDivergence` is a **first-class field of the risk report** rather than a diagnostic, and it is reported on three bases. The one to trust for a price-dependent mode is **annualised percent of notional**, because it is the only basis invariant to the price.
+
+`bears_on_the_registry` is true whenever the mode is price-dependent, **whether or not the magnitude comes out high** — a substitute that is wrong in structure bears on the registry regardless.
+
+### A correction, kept because the pattern is the point
+
+An earlier version of this section claimed `rollovers_crossed` "counts five rollovers a week and has no triple-swap concept", so the registered model understated a week's carry by two sevenths. **That was wrong.** It was asserted from the function's name without reading its body.
+
+`[MEASURED]` `rollovers_crossed` counts **every** calendar day's boundary, weekends included — 7 per week, 14 per fortnight. The registered night **count** is right; only the *timing* differs, and it cancels over whole weeks. `tests/risk/test_clock.py` now measures the count against the real function, so the layer's comparison basis is pinned rather than believed.
+
+The lesson is the same one §8 taught: **an assertion about someone else's code that is not a test is an assertion you are relying on luck for.** The magnitude and sign findings above survive this correction untouched.
 
 ### Enforcement
 

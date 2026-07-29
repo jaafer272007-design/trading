@@ -20,6 +20,28 @@ that a documentation page might suggest. An unrecognised mode is refused.
 where positions are closed without being asked. An account that goes to zero
 goes through the second one, so it is the number that matters and it is not
 buried under the first.
+
+Implausible leverage voids the projection entirely
+--------------------------------------------------
+
+`[MEASURED]` 2026-07-29, on the demo account the probe ran against:
+``leverage = 1:2,000,000,000``. That is a demo artefact, and it does not merely
+make the projection imprecise -- it makes it meaningless, by a mechanism worth
+stating because it is not obvious from the formula.
+
+Leverage does not appear anywhere in the arithmetic below. It does not have to.
+Required margin is proportional to ``1 / leverage``, and in percent mode the
+intervention threshold is ``margin x level / 100`` -- so at absurd leverage the
+margin collapses toward zero, the threshold collapses with it, and the headroom
+becomes the whole of equity. The projection then reports that financing needs
+years to reach a stop-out that the account can in practice never hit, because
+its margin regime is not one any real account has.
+
+A number that is arithmetically correct and describes nothing is worse than a
+refusal, so the projection is refused outside :data:`MIN_PLAUSIBLE_LEVERAGE` to
+:data:`MAX_PLAUSIBLE_LEVERAGE`. Unlimited-leverage accounts fall outside that
+range and are refused for the same reason rather than in spite of it: an account
+with no margin requirement has no margin projection.
 """
 
 from __future__ import annotations
@@ -35,6 +57,15 @@ from risk.state import AccountState
 #: MT5's ``ENUM_ACCOUNT_STOPOUT_MODE``.
 STOPOUT_MODE_PERCENT: Final = 0
 STOPOUT_MODE_MONEY: Final = 1
+
+#: The range of account leverage within which a margin projection describes
+#: something. 1:1 is a fully funded account; 1:5000 is beyond the most
+#: aggressive offshore retail offer seen in practice. These are bounds on
+#: plausibility, not operating limits -- they are facts about what brokers
+#: offer, so they live here rather than in :class:`risk.config.RiskConfig`,
+#: and widening one is a claim about the market rather than a preference.
+MIN_PLAUSIBLE_LEVERAGE: Final = 1
+MAX_PLAUSIBLE_LEVERAGE: Final = 5_000
 
 
 class StopoutMode(IntEnum):
@@ -187,6 +218,36 @@ def margin_projection(
                 "no margin is in use, so there is no margin level and no "
                 "intervention level to project toward",
             )
+        )
+
+    if not MIN_PLAUSIBLE_LEVERAGE <= account.leverage <= MAX_PLAUSIBLE_LEVERAGE:
+        # Refused before the mode is even read: whatever the units, a threshold
+        # proportional to a margin that is proportional to 1/leverage does not
+        # describe this account. See the module docstring.
+        refusals.append(
+            Refusal(
+                RefusalCode.LEVERAGE_IMPLAUSIBLE,
+                "margin projection",
+                f"leverage reads 1:{account.leverage:,}, outside the plausible "
+                f"range 1:{MIN_PLAUSIBLE_LEVERAGE} to "
+                f"1:{MAX_PLAUSIBLE_LEVERAGE:,}. Required margin is "
+                f"proportional to 1/leverage and the intervention threshold is "
+                f"proportional to margin, so at this leverage the threshold "
+                f"collapses toward zero and the projection would report years "
+                f"of headroom against a stop-out this account cannot reach. "
+                f"That is a demo artefact, not a safe account",
+            )
+        )
+        return MarginProjection(
+            equity=account.equity,
+            margin=account.margin,
+            margin_free=account.margin_free,
+            margin_level_pct=level_pct,
+            mode=None,
+            call=None,
+            stop_out=None,
+            price_is_held_constant=True,
+            refusals=tuple(refusals),
         )
 
     try:

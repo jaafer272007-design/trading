@@ -251,6 +251,41 @@ def test_an_alert_reaches_the_log_file_through_the_assembled_channel(
     assert json.loads(log.read_text(encoding="utf-8").strip())["key"] == "1"
 
 
+def test_the_carry_log_records_what_the_increments_can_be_derived_from(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "carry.jsonl"
+    ADAPTER.append_carry_log(path, _report(), 2_398.80)
+    row = json.loads(path.read_text(encoding="utf-8").strip())
+    # Everything the swap measurement needs, and the price alongside it so the
+    # price-dependence of a base-currency swap is testable from the file alone.
+    assert row["ticket"] == fixtures.position().ticket
+    assert row["carry_paid"] == pytest.approx(2.0)
+    assert row["price"] == pytest.approx(2_398.80)
+    assert row["days_open"] == pytest.approx(2.0)
+    assert row["direction"] == "long"
+
+
+def test_the_carry_log_appends_so_increments_survive(tmp_path: Path) -> None:
+    path = tmp_path / "carry.jsonl"
+    ADAPTER.append_carry_log(path, _report(), 2_398.80)
+    ADAPTER.append_carry_log(
+        path, _report(positions=(fixtures.position(swap=-3.0),)), 2_410.00
+    )
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert len(rows) == 2
+    # The nightly increment is recoverable, which is the whole point.
+    assert rows[1]["carry_paid"] - rows[0]["carry_paid"] == pytest.approx(1.0)
+
+
+def test_a_flat_account_writes_no_carry_rows(tmp_path: Path) -> None:
+    path = tmp_path / "carry.jsonl"
+    ADAPTER.append_carry_log(
+        path, _report(positions=(), account=fixtures.account(margin=0.0)), None
+    )
+    assert not path.exists()
+
+
 def test_the_defaults_reach_the_configuration_unchanged() -> None:
     config = ADAPTER.config_from_args(ADAPTER.parse_args([]))
     assert config == RiskConfig()

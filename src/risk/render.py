@@ -199,7 +199,8 @@ def _render_swap(divergences: tuple[SwapDivergence, ...]) -> list[str]:
         lines.append("")
         lines.append(f"  {d.symbol}   verdict: {d.verdict.value}")
         if d.mode is not None:
-            lines.append(_row("swap_mode", d.mode.name))
+            suffix = " - PRICE-DEPENDENT" if d.mode_is_price_dependent else ""
+            lines.append(_row("swap_mode", f"{d.mode.name}{suffix}"))
         if d.declared_long_points is not None:
             lines.append(
                 _row(
@@ -224,17 +225,31 @@ def _render_swap(divergences: tuple[SwapDivergence, ...]) -> list[str]:
         if d.comparisons:
             lines.append("")
             lines.append(
-                "      side   source     registered   broker      ratio   exceeds"
+                "      side   source     registered   broker     ratio  "
+                "exceeds   reg%/yr  brk%/yr"
             )
-            lines.append("      " + "-" * 62)
+            lines.append("      " + "-" * 74)
             for c in d.comparisons:
-                ratio = f"{c.ratio:.2f}x" if c.ratio is not None else "  n/a"
+                ratio = f"{c.ratio:.2f}x" if c.ratio is not None else "n/a"
                 flag = "YES" if c.exceeds else "no"
+                reg_pct = (
+                    f"{c.registered_annual_pct:+.2f}"
+                    if c.registered_annual_pct is not None
+                    else "  -  "
+                )
+                brk_pct = (
+                    f"{c.broker_annual_pct:+.2f}"
+                    if c.broker_annual_pct is not None
+                    else "  -  "
+                )
                 lines.append(
                     f"      {c.side:<6} {c.source:<9}  {c.registered_points:>9.1f}  "
-                    f"{c.broker_points:>9.1f}   {ratio:>7}   {flag}"
+                    f"{c.broker_points:>9.1f}  {ratio:>6}  {flag:<7}  "
+                    f"{reg_pct:>7}  {brk_pct:>7}"
                 )
-            lines.append("      points per lot per calendar week")
+            lines.append("      points per lot per calendar week; %/yr of one")
+            lines.append("      lot's notional, the only basis a price-dependent")
+            lines.append("      swap leaves invariant")
         for note in d.notes:
             lines += _wrap(note, bullet="- ")
 

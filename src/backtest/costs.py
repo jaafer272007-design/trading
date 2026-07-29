@@ -106,6 +106,33 @@ COMMISSION_POINTS_PER_LOT_PER_SIDE: Final = 3.5
 #: rollover. Long gold is the more expensive side to carry and the asymmetry is
 #: real: it is the reason the paired-arm cost invariance in ``engine`` is only
 #: partial, and it is deliberately not averaged away.
+#:
+#: .. warning::
+#:
+#:    **MEASURED WRONG, 2026-07-29. Do not use these for a new run without
+#:    reading HYPOTHESES.md H-005 first.** A live FxPro terminal reports
+#:    ``swap_mode = 2`` (``CURRENCY_SYMBOL``) on gold, ``swap_long = -67.9``,
+#:    ``swap_short = +27.0``. Three things are wrong with the pair below, and
+#:    only the third is a matter of degree:
+#:
+#:    1. **Structure.** A base-currency rate makes the charge proportional to
+#:       the gold price. These constants are a fixed points rate with no
+#:       price term, so no value of them would have been right.
+#:    2. **Sign.** The broker CREDITS the short side. :func:`swap_points`
+#:       charges it, on the stated ground that a credit is an optimistic
+#:       assumption about an unobserved rate. It is now observed.
+#:    3. **Magnitude.** Roughly 3.4x too low on the long side, under a reading
+#:       the field alone cannot confirm.
+#:
+#:    They are **not changed here.** Changing a registered constant after the
+#:    runs that used it is hypothesis laundering, and ``RESEARCH.md`` §5.2
+#:    forbids it. H-003 and H-007 carry dated notes quantifying what the error
+#:    did to them: 0.45% of H-003's effect, and a sign flip on H-007's point
+#:    estimate that stays inside 2.4% of its own confidence interval.
+#:
+#:    ``src/risk/swap.py`` measures the divergence against a live account and
+#:    reports it as a first-class output. This notice is asserted present by
+#:    ``tests/backtest/test_costs.py`` so that it cannot be quietly deleted.
 SWAP_LONG_POINTS_PER_LOT_PER_NIGHT: Final = 20.0
 SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT: Final = 8.0
 
