@@ -25,19 +25,40 @@ What ``nights_held`` is, and is not
 
 :meth:`RolloverClock.nights_between` counts **server midnights crossed**. That
 is a clean, checkable definition, and it is deliberately *not* called a swap
-count, because the two differ:
+count, because the timing differs from what the broker charges:
 
 - Saturday and Sunday midnights are crossed by any position held over a
-  weekend, but no financing is charged on them.
-- One weekday each week carries a **triple** charge, covering the weekend.
-  Which weekday is ``SymbolTerms.swap_rollover_3days_weekday``.
+  weekend, but **no financing is charged on them** — the market is closed.
+- One weekday each week carries a **triple** charge covering the weekend. Which
+  weekday is ``SymbolTerms.swap_rollover_3days_weekday``.
 
-The net of those two is that a full week costs seven nights' financing charged
-across five rollovers. That is why :mod:`risk.carry` projects forward on a
-**per calendar day** basis measured from what the broker actually charged,
-rather than by counting rollovers and multiplying: the calendar-day rate
-absorbs the triple-swap convention, weekends, holidays and mid-hold rate
-changes without needing to model any of them.
+Those two cancel over a whole week: five charging events, one of them tripled,
+is seven nights across seven calendar days. They do **not** cancel inside a
+week, and they miss in both directions — a hold spanning only Saturday and
+Sunday is charged nothing, while a hold spanning only the triple-swap weekday
+is charged three nights for one crossing.
+
+A correction to what this module previously said
+------------------------------------------------
+
+An earlier version of this docstring asserted that a week costs "seven nights
+charged across **five** rollovers", and that ``backtest.costs.rollovers_crossed``
+therefore understated a week's carry by two sevenths. **That was wrong, and it
+was asserted without reading the function.**
+
+`[MEASURED]` ``rollovers_crossed`` walks calendar days and counts **every**
+17:00 New York boundary, weekends included: **7 over a Monday-to-Monday span,
+14 over two weeks.** ``tests/risk/test_swap.py`` pins those two numbers against
+the real function, so the premise this layer compares on is a measurement
+rather than a belief about someone else's code.
+
+So the registered model and a broker agree on the **count** of nights per
+calendar week. They disagree on **when** those nights land, and that mismatch
+averages out over whole weeks. It is a real difference for sub-week holds and
+it is not a systematic understatement of anything.
+
+The magnitude error found against this broker is a separate and much larger
+thing, and it survives this correction untouched — see :mod:`risk.swap`.
 """
 
 from __future__ import annotations
@@ -46,15 +67,16 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
-#: Financing charges in one calendar week. Five rollovers occur, one of them
-#: at triple rate, so the week costs seven nights.
+#: Financing charges a broker levies in one calendar week: five charging
+#: events, one of them at triple rate.
 SWAP_UNITS_PER_WEEK: Final = 7.0
 
-#: Rollovers in one calendar week, which is what ``backtest.costs`` counts
-#: through ``rollovers_crossed``. The gap between this and the line above is
-#: the triple-swap convention, and :mod:`risk.swap` reports it as a divergence
-#: rather than leaving it implicit.
-ROLLOVERS_PER_WEEK: Final = 5.0
+#: Nights the registered model charges in one calendar week.
+#: `[MEASURED]` against ``backtest.costs.rollovers_crossed``, which counts one
+#: boundary per calendar day including Saturday and Sunday. Equal to
+#: :data:`SWAP_UNITS_PER_WEEK` by arithmetic rather than by coincidence, and the
+#: equality is the finding: the registered night count is right.
+REGISTERED_NIGHTS_PER_WEEK: Final = 7.0
 
 DAYS_PER_WEEK: Final = 7.0
 HOURS_PER_DAY: Final = 24.0
@@ -64,9 +86,9 @@ SECONDS_PER_HOUR: Final = 3600.0
 #: and it is written as a ratio rather than as the literal because the two
 #: sevens are different quantities that happen to be equal: seven nights are
 #: charged, and a week has seven days. Holding a position over a weekend costs
-#: financing for the weekend even though no rollover occurs on it, which is
-#: what makes the average come out at one and what makes a
-#: rollover-counting projection wrong.
+#: financing for the weekend even though no charging event occurs on it, which
+#: is what makes the average come out at one and what makes a rate measured per
+#: calendar day the one that needs no schedule.
 SWAP_UNITS_PER_CALENDAR_DAY: Final = SWAP_UNITS_PER_WEEK / DAYS_PER_WEEK
 
 

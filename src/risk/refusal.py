@@ -33,6 +33,9 @@ class RefusalCode(StrEnum):
     SWAP_CURRENCY_MISMATCH = "SWAP_CURRENCY_MISMATCH"
     #: ``margin_so_mode`` is not one of the two documented values.
     MARGIN_MODE_UNSUPPORTED = "MARGIN_MODE_UNSUPPORTED"
+    #: Account leverage is outside any range a real broker offers, so the
+    #: margin regime is not one whose projection means anything.
+    LEVERAGE_IMPLAUSIBLE = "LEVERAGE_IMPLAUSIBLE"
     #: No open position carries margin, so no margin level exists to project.
     NO_MARGIN_IN_USE = "NO_MARGIN_IN_USE"
     #: The server clock could not be located, so the server day and the

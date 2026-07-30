@@ -1,0 +1,338 @@
+"""Reading a week of carry-log rows, before there is a week to read.
+
+``EVALUATION.md`` §5: a gate that has never fired is indistinguishable from one
+that cannot fire. This instrument's most important output is
+``UNDETERMINED``, so most of this file is about making that branch fire — on a
+flat week, on a monotone week, on a week too short, and on a size too small.
+
+The synthetic weeks are built from the two hypotheses directly: one where the
+charge is ``k x price`` and one where it is a constant that steps once. If the
+instrument cannot tell those apart when handed them, it will not tell anything
+apart when handed a real log.
+"""
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+
+from risk.carry_log import (
+    CHARGE_RESOLUTION,
+    MIN_RESOLVED_NIGHTS,
+    POWER_MARGIN,
+    SEPARATION_FACTOR,
+    CarryRow,
+    StructureVerdict,
+    analyse,
+    nightly_charges,
+    parse_rows,
+)
+
+START = datetime(2026, 8, 2, 21, 0, tzinfo=UTC)
+OFFSET = 3.0
+VOLUME = 0.10
+
+#: 67.9 a night on one lot is 6.79 on a tenth. The synthetic weeks are built
+#: around that so the numbers match what a real FxPro log should show.
+NIGHTLY_AT_TENTH_LOT = 6.79
+BASE_PRICE = 2_400.0
+
+
+def _week(
+    prices: list[float], *, price_dependent: bool, step_after: int | None = None
+) -> list[CarryRow]:
+    """Build a week of readings under one of the two hypotheses.
+
+    Args:
+        prices: One price per charging event.
+        price_dependent: True to charge ``k x price``; False for a constant.
+        step_after: For the fixed-rate case, the night after which the rate
+            steps up by 3%. ``None`` for no step.
+
+    Returns:
+        Readings, one before the first charge and one per charge.
+    """
+    k = NIGHTLY_AT_TENTH_LOT / BASE_PRICE
+    rows = [
+        CarryRow(
+            at=START,
+            ticket=7,
+            carry_paid=0.0,
+            price=prices[0],
+            volume=VOLUME,
+            server_offset_hours=OFFSET,
+        )
+    ]
+    cumulative = 0.0
+    for index, price in enumerate(prices):
+        if price_dependent:
+            charge = k * price
+        else:
+            charge = NIGHTLY_AT_TENTH_LOT
+            if step_after is not None and index > step_after:
+                charge *= 1.03
+        cumulative += round(charge, 2)
+        rows.append(
+            CarryRow(
+                at=START + timedelta(days=index + 1),
+                ticket=7,
+                carry_paid=round(cumulative, 2),
+                price=price,
+                volume=VOLUME,
+                server_offset_hours=OFFSET,
+            )
+        )
+    return rows
+
+
+#: A week that reverses twice with a 2% range -- the median real week.
+LIVELY = [2_400.0, 2_424.0, 2_410.0, 2_436.0, 2_418.0, 2_430.0]
+#: A week that never changes direction. Range is fine, shape is not.
+MONOTONE = [2_400.0, 2_410.0, 2_420.0, 2_430.0, 2_440.0, 2_450.0]
+#: A week that barely moves. Shape is fine, range is not.
+FLAT = [2_400.0, 2_400.4, 2_400.0, 2_400.5, 2_400.1, 2_400.3]
+
+
+# --------------------------------------------------------------------------
+# Reconstructing the charging events
+# --------------------------------------------------------------------------
+
+
+def test_increments_are_recovered_from_a_cumulative_field() -> None:
+    nights = nightly_charges(_week(LIVELY, price_dependent=False))
+    assert len(nights) == len(LIVELY)
+    assert all(
+        n.increment == pytest.approx(NIGHTLY_AT_TENTH_LOT, abs=0.01) for n in nights
+    )
+
+
+def test_readings_with_no_change_do_not_become_charging_events() -> None:
+    # A 60-second monitor produces ~1,440 readings a day and one charge.
+    rows = _week(LIVELY, price_dependent=False)
+    padded = list(rows)
+    for minute in range(1, 30):
+        padded.append(
+            CarryRow(
+                at=START + timedelta(minutes=minute),
+                ticket=7,
+                carry_paid=0.0,
+                price=BASE_PRICE,
+                volume=VOLUME,
+                server_offset_hours=OFFSET,
+            )
+        )
+    assert len(nightly_charges(padded)) == len(nightly_charges(rows))
+
+
+def test_the_triple_swap_night_is_inferred_rather_than_assumed() -> None:
+    rows = _week(LIVELY, price_dependent=False)
+    # Triple the third charge, as a broker does on its 3-day weekday.
+    bumped = list(rows)
+    extra = 2 * NIGHTLY_AT_TENTH_LOT
+    for i in range(3, len(bumped)):
+        bumped[i] = CarryRow(
+            at=bumped[i].at,
+            ticket=7,
+            carry_paid=round(bumped[i].carry_paid + extra, 2),
+            price=bumped[i].price,
+            volume=VOLUME,
+            server_offset_hours=OFFSET,
+        )
+    nights = nightly_charges(bumped)
+    assert [n.multiplier for n in nights] == [1, 1, 3, 1, 1, 1]
+    # And the unit charge is restored, which is what the test statistic needs.
+    assert all(
+        n.unit_charge == pytest.approx(NIGHTLY_AT_TENTH_LOT, abs=0.02) for n in nights
+    )
+
+
+def test_the_server_weekday_is_recovered_from_the_recorded_offset() -> None:
+    nights = nightly_charges(_week(LIVELY, price_dependent=False))
+    # The first charge is observed at Monday 2026-08-03 21:00 UTC, which is
+    # exactly Tuesday 00:00 on a UTC+3 server -- so it is the rollover INTO
+    # Tuesday, weekday 1. Getting this wrong by one is precisely how a
+    # triple-swap day gets attributed to the wrong weekday, so it is pinned.
+    assert nights[0].server_weekday == 1
+    assert [n.server_weekday for n in nights] == [1, 2, 3, 4, 5, 6]
+
+
+# --------------------------------------------------------------------------
+# The verdict, when the week has power
+# --------------------------------------------------------------------------
+
+
+def test_a_price_dependent_week_is_called_price_dependent() -> None:
+    result = analyse(_week(LIVELY, price_dependent=True))
+    assert result.power.has_power
+    assert result.verdict is StructureVerdict.PRICE_DEPENDENT
+    assert result.cv_charge_over_price is not None
+    assert result.cv_unit_charge is not None
+    assert result.cv_charge_over_price * SEPARATION_FACTOR < result.cv_unit_charge
+    assert "moves WITH the gold price" in result.notes[0]
+
+
+def test_a_fixed_rate_week_is_called_fixed_even_when_the_price_moves() -> None:
+    result = analyse(_week(LIVELY, price_dependent=False))
+    assert result.power.has_power
+    assert result.verdict is StructureVerdict.FIXED_RATE
+    assert "does NOT move with gold" in result.notes[0]
+
+
+def test_a_fixed_rate_that_steps_once_is_not_mistaken_for_price_dependence() -> None:
+    # The specific alternative the reversal requirement exists to exclude.
+    result = analyse(_week(LIVELY, price_dependent=False, step_after=2))
+    assert result.power.has_power
+    assert result.verdict is not StructureVerdict.PRICE_DEPENDENT
+
+
+# --------------------------------------------------------------------------
+# UNDETERMINED, which is the output that matters most
+# --------------------------------------------------------------------------
+
+
+def test_a_flat_week_is_undetermined_rather_than_agreeing_with_fixed() -> None:
+    # The user's question: if gold does not move, the test is uninformative.
+    # It must say so, not report FIXED_RATE.
+    result = analyse(_week(FLAT, price_dependent=True))
+    assert not result.power.has_power
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert any("could not have been seen" in r for r in result.power.reasons)
+    assert any("not evidence for either explanation" in n for n in result.notes)
+
+
+def test_a_monotone_week_is_undetermined_however_far_the_price_travels() -> None:
+    result = analyse(_week(MONOTONE, price_dependent=True))
+    assert not result.power.has_power
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert any("changed direction" in r for r in result.power.reasons)
+
+
+def test_too_few_charging_events_is_undetermined() -> None:
+    result = analyse(_week(LIVELY[:3], price_dependent=True))
+    assert not result.power.has_power
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert any("charging events resolved" in r for r in result.power.reasons)
+
+
+def test_the_required_range_scales_inversely_with_position_size() -> None:
+    # The fixed-rate week, so the mean unit charge is exactly the nightly
+    # figure rather than that figure scaled by the week's mean price.
+    tenth = analyse(_week(LIVELY, price_dependent=False)).power
+    assert tenth.required_range_fraction is not None
+    assert tenth.required_range_fraction == pytest.approx(
+        POWER_MARGIN * CHARGE_RESOLUTION / NIGHTLY_AT_TENTH_LOT, rel=1e-3
+    )
+    # 0.44% at a tenth of a lot -- the figure the size recommendation rests on.
+    assert tenth.required_range_fraction == pytest.approx(0.00442, abs=1e-4)
+
+
+def test_a_hundredth_of_a_lot_needs_ten_times_the_price_movement() -> None:
+    # 4.4%, which the snapshot says only 6% of weeks reach. This is why the
+    # recommended size is 0.10 and not the broker minimum.
+    small = [
+        CarryRow(
+            at=row.at,
+            ticket=row.ticket,
+            carry_paid=round(row.carry_paid / 10.0, 2),
+            price=row.price,
+            volume=0.01,
+            server_offset_hours=row.server_offset_hours,
+        )
+        for row in _week(LIVELY, price_dependent=True)
+    ]
+    power = analyse(small).power
+    assert power.required_range_fraction is not None
+    assert power.required_range_fraction == pytest.approx(0.0442, abs=1e-3)
+    assert power.price_range_fraction is not None
+    assert power.price_range_fraction < power.required_range_fraction
+    assert not power.has_power
+
+
+# --------------------------------------------------------------------------
+# What the week settles regardless of power
+# --------------------------------------------------------------------------
+
+
+def test_the_magnitude_is_settled_even_on_a_flat_week() -> None:
+    result = analyse(_week(FLAT, price_dependent=True))
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert result.charge_per_lot_per_night is not None
+    assert result.charge_per_lot_per_night == pytest.approx(67.9, abs=0.5)
+    assert any("settled with or without power" in n for n in result.notes)
+
+
+def test_an_account_that_charges_nothing_says_so_and_names_the_ambiguity() -> None:
+    rows = [
+        CarryRow(
+            at=START + timedelta(days=day),
+            ticket=7,
+            carry_paid=0.0,
+            price=BASE_PRICE,
+            volume=VOLUME,
+            server_offset_hours=OFFSET,
+        )
+        for day in range(8)
+    ]
+    result = analyse(rows)
+    assert not result.charges_swaps
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert any("swap-free account" in n for n in result.notes)
+
+
+# --------------------------------------------------------------------------
+# Parsing, and refusing what is not a carry log
+# --------------------------------------------------------------------------
+
+
+def test_a_written_log_round_trips(tmp_path: object) -> None:
+    line = (
+        '{"at": "2026-08-02T21:00:00+00:00", "carry_paid": 6.79, "price": 2400.0, '
+        '"server_offset_hours": 3.0, "ticket": 7, "volume": 0.1}'
+    )
+    rows = parse_rows([line, "", "  "])
+    assert len(rows) == 1
+    assert rows[0].ticket == 7
+    assert rows[0].price == pytest.approx(2_400.0)
+
+
+def test_a_log_without_a_price_still_parses_and_loses_only_the_structure_test() -> None:
+    line = (
+        '{"at": "2026-08-02T21:00:00+00:00", "carry_paid": 6.79, "price": null, '
+        '"server_offset_hours": null, "ticket": 7, "volume": 0.1}'
+    )
+    rows = parse_rows([line])
+    assert rows[0].price is None
+    assert rows[0].server_offset_hours is None
+
+
+def test_something_that_is_not_a_carry_log_is_refused() -> None:
+    with pytest.raises(ValueError, match="not a carry-log record"):
+        parse_rows(['{"hello": "world"}'])
+
+
+def test_two_tickets_in_one_call_is_refused_rather_than_pooled() -> None:
+    rows = _week(LIVELY, price_dependent=True)
+    other = CarryRow(
+        at=START,
+        ticket=8,
+        carry_paid=0.0,
+        price=BASE_PRICE,
+        volume=VOLUME,
+        server_offset_hours=OFFSET,
+    )
+    with pytest.raises(ValueError, match="expected one ticket"):
+        analyse([*rows, other])
+
+
+def test_an_empty_log_is_refused() -> None:
+    with pytest.raises(ValueError, match="no rows"):
+        analyse([])
+
+
+def test_the_thresholds_are_the_ones_written_before_the_data() -> None:
+    # Restated as literals so that relaxing a threshold cannot also relax the
+    # assertion. If the log arrives and the test does not fire, the correct
+    # response is to report UNDETERMINED, not to move these.
+    assert CHARGE_RESOLUTION == 0.01
+    assert POWER_MARGIN == 3.0
+    assert SEPARATION_FACTOR == 3.0
+    assert MIN_RESOLVED_NIGHTS == 5

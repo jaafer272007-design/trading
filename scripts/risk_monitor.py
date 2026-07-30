@@ -125,6 +125,7 @@ DEFAULT_INTERVAL_SECONDS: Final = 60.0
 DEFAULT_STATE_DIR: Final = Path.home() / ".trading-risk"
 HEARTBEAT_NAME: Final = "heartbeat.json"
 ALERTS_NAME: Final = "alerts.jsonl"
+CARRY_LOG_NAME: Final = "carry.jsonl"
 OFFSET_CACHE_NAME: Final = "server-offset.json"
 
 #: How far a tick may be from a whole-hour offset before the measurement is
@@ -663,13 +664,29 @@ def read_everything(
     return terminal, account, positions, deals, terms, clock_reason
 
 
+def current_price(mt5: Any, symbol: str) -> float | None:
+    """Read the current ask, for the annualised swap basis.
+
+    Args:
+        mt5: The MetaTrader5 module.
+        symbol: Symbol.
+
+    Returns:
+        The ask, or ``None`` when no tick is available.
+    """
+    tick = mt5.symbol_info_tick(symbol)
+    if tick is None or not tick.ask:
+        return None
+    return float(tick.ask)
+
+
 def take_reading(
     mt5: Any,
     symbol: str,
     cache_path: Path,
     explicit_offset: float | None,
     config: RiskConfig,
-) -> tuple[RiskReport, str]:
+) -> tuple[RiskReport, str, float | None]:
     """Read the terminal once and build a report from it.
 
     Args:
@@ -680,12 +697,13 @@ def take_reading(
         config: Operating limits.
 
     Returns:
-        ``(report, clock_reason)``.
+        ``(report, clock_reason, price)``.
     """
     now = datetime.now(UTC)
     terminal, account, positions, deals, terms, clock_reason = read_everything(
         mt5, symbol, cache_path, explicit_offset, now
     )
+    price = current_price(mt5, symbol)
     report = build_report(
         now=now,
         terminal=terminal,
@@ -694,13 +712,73 @@ def take_reading(
         deals=deals,
         terms_by_symbol=terms,
         config=config,
+        price_by_symbol={symbol: price} if price is not None else None,
     )
-    return report, clock_reason
+    return report, clock_reason, price
 
 
 # --------------------------------------------------------------------------
 # Heartbeat
 # --------------------------------------------------------------------------
+
+
+def append_carry_log(path: Path, report: RiskReport, price: float | None) -> None:
+    """Append one row per open position per reading.
+
+    This is the instrument the swap finding needs. ``position.swap`` accumulates,
+    so a series of readings gives the **nightly increments**, and from those:
+
+    - the effective per-night charge, which is what the declared route refuses
+      to convert under a base-currency ``swap_mode``;
+    - **which weekday carries the triple charge**, measured rather than read off
+      ``swap_rollover3days``, because the increment on that day is three times
+      its neighbours;
+    - whether the charge is **price-dependent**, which is the structural claim.
+      If it is, ``increment / price`` is constant while ``increment`` is not, and
+      one week of rows shows which.
+
+    The heartbeat holds only the latest reading, so without this the increments
+    are unrecoverable and the measurement would have to be transcribed by hand.
+
+    Args:
+        path: File to append to.
+        report: The reading just taken.
+        price: Current price for the configured symbol, when known.
+    """
+    if not report.carries:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        for c in report.carries:
+            handle.write(
+                json.dumps(
+                    {
+                        "at": report.generated_at.isoformat(),
+                        "ticket": c.ticket,
+                        "symbol": c.symbol,
+                        "direction": c.direction.value,
+                        "volume": c.volume,
+                        "opened_at": c.opened_at.isoformat(),
+                        "days_open": round(c.days_open, 6),
+                        "nights_held": c.nights_held,
+                        # In charge terms: positive means the account paid.
+                        "carry_paid": c.carry_paid,
+                        "floating_pnl": c.floating_pnl,
+                        "price": price,
+                        # Recorded so the analysis can recover the SERVER
+                        # weekday, which is what identifies the triple-swap
+                        # day. Without it the multiplier is still inferable but
+                        # the weekday it lands on is not.
+                        "server_offset_hours": (
+                            report.terminal.server_utc_offset_hours
+                        ),
+                        "equity": report.account.equity,
+                        "currency": report.account.currency,
+                    },
+                    sort_keys=True,
+                )
+                + "\n"
+            )
 
 
 def write_heartbeat(path: Path, report: RiskReport) -> None:
@@ -926,6 +1004,7 @@ def run_probe(
             f"profit {d.profit:>10,.2f}  total {d.realised:>10,.2f}"
         )
 
+    price = current_price(mt5, symbol)
     report = build_report(
         now=now,
         terminal=terminal,
@@ -934,6 +1013,7 @@ def run_probe(
         deals=deals,
         terms_by_symbol=terms,
         config=config,
+        price_by_symbol={symbol: price} if price is not None else None,
     )
 
     header("6. THE REPORT THIS PRODUCES")
@@ -1081,13 +1161,14 @@ def run_monitor(
     print(f"risk monitor: reading {symbol} every {interval:,.0f} seconds")
     print(f"  heartbeat  {heartbeat}")
     print(f"  alert log  {state_dir / ALERTS_NAME}")
+    print(f"  carry log  {state_dir / CARRY_LOG_NAME}")
     print("  read-only: this process never places, modifies or closes an order")
     print("  Ctrl-C to stop")
     print()
 
     while True:
         try:
-            report, _ = take_reading(mt5, symbol, cache, explicit_offset, config)
+            report, _, price = take_reading(mt5, symbol, cache, explicit_offset, config)
         except KeyboardInterrupt:
             print("\nstopped")
             return 0
@@ -1107,6 +1188,7 @@ def run_monitor(
         else:
             deliver(report, notifier)
             write_heartbeat(heartbeat, report)
+            append_carry_log(state_dir / CARRY_LOG_NAME, report, price)
 
         try:
             time.sleep(interval)

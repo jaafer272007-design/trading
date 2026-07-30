@@ -346,10 +346,10 @@ costume of a rule.
 
 ---
 
-## 5. Instrument defects: seven, and the pattern held every time
+## 5. Instrument defects: eight, and the pattern held every time
 
-The count is **seven**, not six — H-010 contributed two unrelated ones, which is the likely
-source of any undercount.
+The count is **eight**. Seven were defects in code. **The eighth, added 2026-07-29, is a
+defect in a *claim about* code** — and it is the only one that reached a merged commit.
 
 | # | defect | caught by |
 |---|---|---|
@@ -360,19 +360,55 @@ source of any undercount.
 | 5 | the breakeven solver's false precision — "1,076.2 ± 3.9" on a curve with three sign changes | a nine-point probe grid |
 | 6 | K-1's **vacuous pass** at 35 and 56 parameters | the clean null measured beside the verdict |
 | 7 | **separability** costing 426,723 iterations against 314 at identical conditioning | an independent IRLS solve |
+| 8 | **`rollovers_crossed` "counts five rollovers a week"** — it counts seven | running the function on a known week |
 
-**The pattern, unchanged across all seven:**
+**The pattern, unchanged across all eight:**
 
 - Every one was **fluent**. No warning, no `NaN`, no stack trace.
-- **Four of seven had a self-check that agreed with them**, because the self-check shared
+- **Four of eight had a self-check that agreed with them**, because the self-check shared
   the assumption. In #6 the self-check *was the gate*, returning PASS.
 - **None was caught by re-reading the code.** Each needed an external reference or an
   adversarial fixture: a published calendar, `zoneinfo`, a corrupted input, a probe grid, a
-  second solver.
-- **Five of seven made the data look worse than it is**, not better. The failure mode is not
+  second solver — and, for #8, simply calling the function.
+- **Five of eight made the data look worse than it is**, not better. The failure mode is not
   optimism. It is confidence.
-- **Two of seven were inside machinery written to prevent a defect** — the probe grid and
+- **Two of eight were inside machinery written to prevent a defect** — the probe grid and
   the convergence rule. Instrument count is not monotone in instrument care.
+
+### 5.1 Why #8 is a different kind, and the worse kind
+
+Defects 1-7 were wrong **code**. #8 was correct code with a wrong **sentence about it**, in
+a docstring, in a constant's comment, in a PR body, and in `CLAUDE.md`. Three consequences
+follow that the first seven do not have.
+
+**It could not fail.** A wrong computation eventually meets an input that embarrasses it.
+A wrong sentence computes nothing, so nothing can contradict it. The only thing that ever
+would have was somebody running `rollovers_crossed` on a known week, which took one
+command.
+
+**It propagated through review.** #1-7 were caught before or during the run that used them.
+#8 was written, reviewed, described in a merged pull request, and copied into three more
+documents — each copy making it look better attested. **The number of places a claim
+appears is not evidence for it**, and this project now has an instance where it looked
+like evidence.
+
+**Its blast radius was arithmetic downstream.** It inflated the reported weekly divergence
+by 7/5 and produced a specific false claim — that a broker charging 15 points a night
+already exceeds the registry — which is exactly the kind of headline number that gets
+quoted onward.
+
+**The lesson, and it generalises §1.2 rather than repeating it.** §1.2: *a rule that is not
+a test is a rule you are relying on luck to follow.* One step out: **an assertion about
+someone else's code, with no test behind it, is an assertion you are relying on luck for.**
+The fix is the same shape and took four lines — `tests/risk/test_clock.py` now calls
+`rollovers_crossed` over a Monday-to-Monday span and asserts 7, over a fortnight and
+asserts 14, and over a weekend and asserts 3. Any change to that function now fails the
+build in the layer that depends on it.
+
+**Where the pattern was already visible.** `mt5_probe.py`'s correction log says it exactly:
+*"a measurement tool manufactures findings until the tool itself is tested."* #8 is the
+same sentence with "measurement tool" replaced by "claim". Both were fluent, both were
+internally consistent, and both were wrong.
 
 **H-012 added none, and the reason sharpens the pattern.** Its one failure was
 `frame_sha256` raising on a string column: a traceback, at the manifest step, after every
@@ -520,7 +556,7 @@ is in flight, nothing is waiting on a decision, and no work is proposed.
 |---|---|---|---|
 | **H-001** | gate | **ACCEPTED** | K-1 does not trip. Shuffled-label null mean BSS `−0.000855` across 30 seeds. Reproduced by the §1.5 restore drill. Certifies *no label reaches the model along this path at this capacity* — not the absence of all leakage. |
 | **H-002** | gate | **STANDING** | Temporal causality of every feature. Asserted on every commit. The day it fails is the day the pipeline halts. |
-| **H-003** | claim | **ACCEPTED, reading withdrawn** | Signal beat random entry by `+0.060398 R`, `p = 0.0204`. The run stands and its arithmetic holds; **the directional inference does not** — H-007 showed the difference was long bias. Status left as ACCEPTED on purpose: the registry records what was done, not what is currently believed. |
+| **H-003** | claim | **ACCEPTED, reading withdrawn** | Signal beat random entry by `+0.060398 R`, `p = 0.0204`. The run stands as executed; **the directional inference does not** — H-007 showed the difference was long bias. **"Its arithmetic holds" was too strong and is corrected in §11**: the cost inputs are now measured to be wrong, though by 0.45% of the effect. Status left as ACCEPTED on purpose: the registry records what was done, not what is currently believed. |
 | **H-004** | claim | **REGISTERED, never run** | LLM synthesis vs deterministic combination. Never reached — the ladder halted first. Carries an `N_claims` draw. |
 | **H-005** | gate | **REGISTERED, open** | Registered deviation from `EVALUATION.md` §10: spread is not calibratable on this feed. **No result may be described as satisfying §10 while this is open.** The 75-point floor is raisable only. |
 | **H-006** | gate | **REGISTERED** | The evaluation window `2015-09-11 → 2026-07-26` is a declared boundary, not a truncation. |
@@ -589,3 +625,87 @@ Not a proposal — a statement of what the record obliges. Any new work starts b
 `RESEARCH.md`, `DATA_CONTRACT.md`, `EVALUATION.md`, this file, and `HYPOTHESES.md` §0, and
 by accepting that `N_claims` **starts at 6, not at 0**. The denominator does not reset
 because someone new is looking. That is the whole reason it is written down.
+
+---
+
+## 11. The cost model, measured — a correction to §10 and to my own claim
+
+**Dated 2026-07-29, after §10 was written.** `HYPOTHESES.md` H-005, H-003 and H-007 carry
+the full records. This section exists because §10 states things that are now known to be
+wrong, and §10 is the document a later reader is most likely to read alone.
+
+### 11.1 What was measured
+
+`scripts/risk_monitor.py --probe`, FxPro demo, `GOLD`: `swap_mode = 2`
+(`SYMBOL_SWAP_MODE_CURRENCY_SYMBOL`), `swap_long = −67.9`, `swap_short = +27.0`.
+
+The registered substitute is a **fixed points rate charged in both directions**. The
+broker's terms are **price-dependent and directionally signed**. Those are different in
+kind, and the difference is not something a better constant fixes.
+
+**The refusal is the finding.** `risk.swap.declared_swap` would not convert a
+base-currency rate without inventing a price, so it returned a `Refusal` naming the
+structure. A default would have produced a plausible number and hidden a structural
+mismatch. That is the third time in this project that a refusal has been the result —
+§3.6, the `UNDETERMINED` DST verdict, and now this.
+
+### 11.2 What it does to the two cost-dependent results
+
+Arithmetic under stated assumptions, **not a re-run**. Both entries carry the full tables.
+
+| | measured | corrected | change | as a share of its own 95% CI half-width |
+|---|---|---|---|---|
+| H-003, signal vs random | `+0.060398 R` | `≈ +0.060127 R` | `−0.000271 R` | negligible |
+| H-007, signal vs always-long | `−0.000141 R` | `≈ +0.001596 R` | `+0.001737 R` | **2.4%** |
+
+**H-007's point estimate flips sign.** That is the only correction in this project that
+moves a number in the signal's favour, and it is recorded prominently for exactly that
+reason — a record that buried it would be choosing which corrections to publish.
+
+**It does not move the verdict**, and the bound comes from numbers already in the entry:
+the correction is **2.4% of the recorded 95% CI half-width** of 0.0735 R. It moves a point
+estimate that was indistinguishable from zero to another point estimate that is
+indistinguishable from zero. It is also 2.6% of H-003's effect, and H-012 tested for
+direction *directly* and did not find it. A financing correction cannot manufacture what a
+direct test looked for and missed.
+
+### 11.3 A claim of mine that was wrong
+
+When `src/risk` was built I asserted that `backtest.costs.rollovers_crossed` "counts five
+rollovers a week and has no triple-swap concept", so the registered model understated a
+week's carry by two sevenths. **I asserted it from the function's name without reading its
+body, and it is false.**
+
+`[MEASURED]` it counts every calendar day's boundary, weekends included: 7 per week, 14
+per fortnight. The registered night **count** is right. Only the timing differs, and it
+cancels over whole weeks.
+
+**The transferable part is in §5.1**, where this is recorded as **instrument defect #8** —
+the first in the table that is a defect in a *claim about* code rather than in code, and
+the only one that reached a merged commit. §1.2 recorded that a rule which is not a test is
+a rule you are relying on luck to follow; this is the same failure one step out.
+`tests/risk/test_clock.py` now measures the count against the real function, so the premise
+fails the build rather than propagating.
+
+### 11.4 What §10 should now be read as saying
+
+- **§10.1, H-003** — "its arithmetic holds" is wrong. Its arithmetic executed as recorded;
+  its cost inputs did not describe the broker. The correction is 0.45% of the effect.
+- **§10.1, H-007** — REJECTED stands. Its point estimate flips sign under correction and
+  remains inside noise.
+- **§10.2 counters** — unchanged. `N_claims` stays at **6**. This is a broker measurement,
+  not an evaluation run: no `hypothesis_id`, no draw, no re-run.
+- **§10.5, "what is safe to conclude"** — the entry on the three-feature model's edge being
+  long bias stands, and stands on H-007's substance rather than on its cost arithmetic.
+
+### 11.5 What is still not measured
+
+The magnitude in §11.1 rests on a reading of the mode-2 figures that the field alone cannot
+confirm: 67.9 ounces a night per lot is not a possible charge, so the number is not
+literally base-currency units at face value. Read as an effective deposit-currency charge
+it annualises to **10.3%** against the registered **3.0%**, and only the first of those is
+a plausible gold financing rate — which is evidence, not a measurement.
+
+**One week of a real position settles it.** Until then the declared route stays refused and
+`SwapDivergence` reports `UNAVAILABLE` on the declared side while still flagging
+`bears_on_the_registry`, because the structure is enough on its own.

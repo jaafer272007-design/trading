@@ -2,11 +2,13 @@
 
 from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 
+from backtest.costs import rollovers_crossed
 from risk.clock import (
     DAYS_PER_WEEK,
-    ROLLOVERS_PER_WEEK,
+    REGISTERED_NIGHTS_PER_WEEK,
     SWAP_UNITS_PER_CALENDAR_DAY,
     SWAP_UNITS_PER_WEEK,
     RolloverClock,
@@ -87,10 +89,36 @@ def test_a_backwards_interval_stays_signed_rather_than_being_clamped() -> None:
     assert hours_between(start, end) == pytest.approx(-2.0)
 
 
-def test_a_week_costs_seven_nights_across_five_rollovers() -> None:
+def test_a_broker_and_the_registered_model_charge_the_same_nights_a_week() -> None:
+    # The correction: an earlier version of this layer claimed the registered
+    # model charged five nights a week against a broker's seven. It charges
+    # seven. The equality is the finding, so it is asserted rather than assumed.
     assert SWAP_UNITS_PER_WEEK == 7.0
-    assert ROLLOVERS_PER_WEEK == 5.0
-    assert SWAP_UNITS_PER_WEEK > ROLLOVERS_PER_WEEK
+    assert REGISTERED_NIGHTS_PER_WEEK == 7.0
+    assert SWAP_UNITS_PER_WEEK == REGISTERED_NIGHTS_PER_WEEK
+
+
+def test_the_registered_night_count_is_measured_against_the_real_function() -> None:
+    # This is the guard that the earlier claim lacked. `rollovers_crossed` is
+    # somebody else's function in somebody else's package, and this layer's
+    # whole comparison basis rests on how many nights it charges per week. If
+    # it ever changes to skip weekends, the basis silently breaks -- unless
+    # this fails the build first.
+    def span(start: str, end: str) -> int:
+        return rollovers_crossed(
+            pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC")
+        )
+
+    # Monday 18:00 UTC to the following Monday: one calendar week.
+    assert span("2026-07-27 18:00", "2026-08-03 18:00") == int(
+        REGISTERED_NIGHTS_PER_WEEK
+    )
+    # Two weeks, to rule out an off-by-one that happens to give 7 once.
+    assert span("2026-07-27 18:00", "2026-08-10 18:00") == 2 * int(
+        REGISTERED_NIGHTS_PER_WEEK
+    )
+    # And it does count the weekend, which is the specific thing that was wrong.
+    assert span("2026-07-31 22:00", "2026-08-03 22:00") == 3
 
 
 def test_the_per_calendar_day_unit_is_one_because_the_week_closes() -> None:

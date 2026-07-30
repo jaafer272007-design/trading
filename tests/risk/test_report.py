@@ -212,6 +212,41 @@ def test_an_unrecognised_margin_mode_announces_that_the_projection_is_off() -> N
         if a.code is AlertCode.REFUSAL and a.subject == "stop-out projection"
     )
     assert "NOT BEING ENFORCED" in alert.detail
+    assert "orders of magnitude" in alert.detail
+
+
+def test_the_stop_out_refusal_alert_names_the_cause_it_actually_hit() -> None:
+    # Implausible leverage and an unrecognised margin mode both leave the
+    # projection empty. An alert that blames the mode when leverage was the
+    # cause sends the reader to the wrong field.
+    leverage = _report(account_kwargs={"leverage": 2_000_000_000})
+    alert = next(
+        a
+        for a in leverage.alerts
+        if a.code is AlertCode.REFUSAL and a.subject == "stop-out projection"
+    )
+    assert alert.key == RefusalCode.LEVERAGE_IMPLAUSIBLE.value
+    assert "1/leverage" in alert.detail
+
+    mode = _report(account_kwargs={"margin_so_mode": 9})
+    alert = next(
+        a
+        for a in mode.alerts
+        if a.code is AlertCode.REFUSAL and a.subject == "stop-out projection"
+    )
+    assert alert.key == RefusalCode.MARGIN_MODE_UNSUPPORTED.value
+
+
+def test_a_price_dependent_swap_mode_raises_the_divergence_on_structure() -> None:
+    # FxPro's gold. No declared comparison is possible, and it still bears on
+    # the registry because a fixed points substitute is wrong in kind.
+    report = _report(
+        terms={"XAUUSD": fixtures.gold(swap_mode=2, swap_long=-67.9, swap_short=27.0)}
+    )
+    assert report.swap[0].mode_is_price_dependent
+    assert report.swap[0].bears_on_the_registry
+    note = next(n for n in report.carries[0].notes if "function of price" in n.lower())
+    assert "rising market raises the dollar carry" in note
 
 
 def test_every_position_refusal_reaches_the_reports_own_list() -> None:

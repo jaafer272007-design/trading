@@ -5,6 +5,8 @@ requirement 3 — the H-005 spread floor, build-enforced. Everything else here
 pins arithmetic so that a failure can be attributed.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -12,6 +14,8 @@ import pytest
 from backtest.costs import (
     SCHEDULED_NEWS_MULTIPLIER,
     SPREAD_FLOOR_POINTS,
+    SWAP_LONG_POINTS_PER_LOT_PER_NIGHT,
+    SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT,
     WEEKLY_OPEN_MULTIPLIER,
     CostModel,
     commission_points,
@@ -188,3 +192,37 @@ def test_swap_is_asymmetric_and_charged_in_both_directions() -> None:
     # assumed.
     assert long_cost != short_cost
     assert swap_points(is_long=True, nights=0, lots=1.0, model=model) == 0.0
+
+
+# --------------------------------------------------------------------------
+# The measured-wrong notice, guarded
+# --------------------------------------------------------------------------
+
+
+def test_the_swap_constants_carry_the_measured_wrong_notice() -> None:
+    # HYPOTHESES.md H-005, 2026-07-29: a live terminal reports a
+    # price-dependent, directionally signed swap on gold. The constants are
+    # deliberately NOT changed -- RESEARCH.md Sec 5.2 forbids editing a
+    # registered constant after the runs that used it -- so the only thing
+    # standing between them and a future run is the notice at their site.
+    #
+    # A notice with no test behind it is exactly what RETROSPECTIVE-2.md Sec 1.2
+    # is about, and Sec 11.3 records this project doing it once already. Hence
+    # this test.
+    source = Path("src/backtest/costs.py").read_text(encoding="utf-8")
+    assert "MEASURED WRONG, 2026-07-29" in source
+    assert "H-005" in source
+    assert "swap_mode = 2" in source
+    # The three findings must each survive, because they are different in kind
+    # and a reader who sees only the magnitude will assume a constant fixes it.
+    assert "1. **Structure.**" in source
+    assert "2. **Sign.**" in source
+    assert "3. **Magnitude.**" in source
+
+
+def test_the_registered_swap_constants_have_not_been_edited_in_response() -> None:
+    # The correct response to a measurement that invalidates a constant is to
+    # record it, not to change the constant. Restated as literals so that
+    # editing the module cannot also edit the assertion.
+    assert SWAP_LONG_POINTS_PER_LOT_PER_NIGHT == 20.0
+    assert SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT == 8.0

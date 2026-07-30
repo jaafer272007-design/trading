@@ -46,8 +46,15 @@ from risk.state import (
     PositionState,
     SymbolTerms,
     TerminalState,
+    value_per_point_per_lot,
 )
-from risk.swap import SwapDivergence, declared_swap, swap_divergence
+from risk.swap import (
+    DeclaredSwap,
+    SwapDivergence,
+    SwapMode,
+    declared_swap,
+    swap_divergence,
+)
 
 #: Multiple of a WARN threshold at which the same condition becomes CRITICAL.
 #: One number for every escalation so that the report has a single notion of
@@ -122,6 +129,7 @@ def build_report(
     deals: tuple[DealState, ...],
     terms_by_symbol: dict[str, SymbolTerms],
     config: RiskConfig,
+    price_by_symbol: dict[str, float] | None = None,
 ) -> RiskReport:
     """Turn one reading of the terminal into a report.
 
@@ -135,6 +143,10 @@ def build_report(
         terms_by_symbol: Symbol terms for every symbol in ``positions``, and
             for any other symbol whose swap should be compared.
         config: Operating limits.
+        price_by_symbol: Current price per symbol, used only for the annualised
+            basis of the swap comparison. Falls back to an open position's
+            ``price_current`` when absent, and the annualised figures are simply
+            omitted when neither is available.
 
     Returns:
         The report, with alerts already raised but not yet delivered.
@@ -175,12 +187,18 @@ def build_report(
         carries, positions, terms_by_symbol, account.equity, now
     )
 
+    prices = dict(price_by_symbol or {})
+    for p in positions:
+        prices.setdefault(p.symbol, p.price_current)
+
     swap = tuple(
-        swap_divergence(
-            symbol=name,
-            declared=declared_by_symbol[name],
-            measured_daily_points=portfolio.per_lot_per_day_points.get(name, {}),
-            measured_tolerance=config.swap_divergence_tolerance,
+        _divergence_for(
+            name,
+            terms_by_symbol[name],
+            declared_by_symbol[name],
+            portfolio,
+            prices.get(name),
+            config,
         )
         for name in sorted(terms_by_symbol)
     )
@@ -224,6 +242,48 @@ def build_report(
         concurrency=concurrency,
         refusals=tuple(refusals),
         alerts=alerts,
+    )
+
+
+def _divergence_for(
+    name: str,
+    terms: SymbolTerms,
+    declared: DeclaredSwap | Refusal,
+    portfolio: PortfolioCarry,
+    price: float | None,
+    config: RiskConfig,
+) -> SwapDivergence:
+    """Build one symbol's divergence finding, with the annualised basis.
+
+    Args:
+        name: Symbol.
+        terms: Its terms as read from the terminal.
+        declared: Result of :func:`risk.swap.declared_swap`.
+        portfolio: Book financing, for the measured route.
+        price: Current price, or ``None``.
+        config: Operating limits.
+
+    Returns:
+        The finding.
+    """
+    per_point = value_per_point_per_lot(terms)
+    notional = (
+        terms.trade_contract_size * price
+        if price is not None and price > 0 and terms.trade_contract_size > 0
+        else None
+    )
+    try:
+        mode: SwapMode | None = SwapMode(terms.swap_mode)
+    except ValueError:
+        mode = None
+    return swap_divergence(
+        symbol=name,
+        declared=declared,
+        measured_daily_points=portfolio.per_lot_per_day_points.get(name, {}),
+        measured_tolerance=config.swap_divergence_tolerance,
+        mode=mode,
+        currency_per_point=per_point,
+        notional_per_lot=notional,
     )
 
 
@@ -289,15 +349,31 @@ def _raise_alerts(
             daily.code.value,
         )
 
-    if margin.mode is None:
-        raise_alert(
-            AlertCode.REFUSAL,
-            Severity.WARN,
-            "stop-out projection",
-            "NOT BEING ENFORCED - the broker's margin-call mode was not "
-            "recognised, so the intervention levels have no known units",
-            RefusalCode.MARGIN_MODE_UNSUPPORTED.value,
+    if margin.stop_out is None:
+        # Read the reason off the projection rather than assuming one. The
+        # projection is refused for several distinct causes -- an unrecognised
+        # margin mode, implausible leverage, no margin in use -- and an alert
+        # that names the wrong one sends the reader to the wrong field.
+        blocking = next(
+            (
+                r
+                for r in margin.refusals
+                if r.code
+                in (
+                    RefusalCode.MARGIN_MODE_UNSUPPORTED,
+                    RefusalCode.LEVERAGE_IMPLAUSIBLE,
+                )
+            ),
+            None,
         )
+        if blocking is not None:
+            raise_alert(
+                AlertCode.REFUSAL,
+                Severity.WARN,
+                "stop-out projection",
+                f"NOT BEING ENFORCED - {blocking.reason}",
+                blocking.code.value,
+            )
 
     if concurrency.breached:
         raise_alert(
