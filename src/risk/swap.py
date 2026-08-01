@@ -57,6 +57,47 @@ window. That is evidence for the reading, and evidence is not a measurement.
 **One week of a real position settles it**; until then the declared route stays
 refused and the measured route is what fills the comparison in.
 
+The reading, 2026-08-01: the magnitude is now measured
+------------------------------------------------------
+
+`[MEASURED]` a live long of 0.10 lots was charged **13.58 in the deposit
+currency across two charging events** — 6.79 a night, which on this contract is
+**67.9 points per lot per night**, equal to the published ``swap_long`` to the
+last digit.
+
+**What that settles.** The deposit-currency reading above is no longer an
+inference. It also kills the *literal* base-currency reading outright: 67.9
+ounces a night per lot would be roughly 277,000 in the deposit currency, four
+orders of magnitude from what was charged. The field is being applied **at face
+value in the deposit currency**, exactly as ``SwapMode.POINTS`` would apply it,
+whatever ``swap_mode`` declares.
+
+**What it does not settle**, and the distinction is the whole reason
+:mod:`risk.carry_log` exists. A rate that is proportional to price with a
+coefficient calibrated at today's price is indistinguishable from a fixed rate
+at *one* price. Only a series separates them, and the series needs the price to
+reverse — see :data:`risk.carry_log.MIN_REVERSALS`. A two-night monotone window
+returns ``UNDETERMINED`` by construction, and that is what this one returns.
+
+Which basis the comparison is quoted on, and why it must be said
+----------------------------------------------------------------
+
+The registered constant is **per night**. The measured route has two
+denominators, equal over a whole week and unequal below one:
+
+- ``measured/day`` — charge over elapsed calendar days. What the projection
+  needs, because it absorbs the charging schedule.
+- ``measured/night`` — charge over midnights crossed. What the *registry
+  comparison* needs, because that is the registry's own unit.
+
+`[MEASURED]` on the 2026-08-01 reading these differed materially: a 44.8-hour
+hold that crossed two midnights displayed **3.64x on the calendar-day basis and
+3.40x on the per-night basis**, because 13.58 over 1.87 days is 7.2% more per
+day than 13.58 over 2 nights. Both numbers are correct arithmetic on their own
+denominator and **the ratio is meaningless without the denominator's name**, so
+the source column now carries it. ``tests/risk/test_swap.py`` reconstructs that
+exact reading, so the explanation is a test rather than a paragraph.
+
 A correction to what this module previously claimed
 --------------------------------------------------
 
@@ -138,6 +179,22 @@ REGISTERED_WEEKLY_SHORT_POINTS: Final = (
 #: is charged on it.
 NIGHTS_PER_YEAR: Final = 365.0
 
+#: The broker's published rate, exact.
+SOURCE_DECLARED: Final = "declared"
+#: Measured charge over elapsed calendar days.
+SOURCE_MEASURED_DAY: Final = "measured/day"
+#: Measured charge over midnights crossed. The like-for-like basis against a
+#: registered constant that is itself quoted per night.
+SOURCE_MEASURED_NIGHT: Final = "measured/night"
+
+#: Fractional gap between the two measured bases' ratios before the divergence
+#: says so in a note. Deliberately **low**: this is not an exceedance test, it
+#: is a label saying which denominator a quoted number came from, and the
+#: reading that motivated it differed by 7.2%. A threshold set at the measured
+#: route's own 10% tolerance would have stayed silent on exactly the case it
+#: exists for.
+BASIS_DISAGREEMENT: Final = 0.01
+
 
 class SwapMode(IntEnum):
     """MT5's ``ENUM_SYMBOL_SWAP_MODE``.
@@ -190,12 +247,15 @@ class SwapMode(IntEnum):
 #: needs in order to decide whether to go and find it.
 _UNSUPPORTED_REASON: Final[dict[SwapMode, str]] = {
     SwapMode.CURRENCY_SYMBOL: (
-        "the rate is quoted in the symbol's BASE currency -- ounces of gold "
-        "here -- so the account-currency charge is proportional to the gold "
-        "price at the moment of charging. A long held into a rising market "
-        "pays a rising dollar carry. No fixed points rate can represent that, "
-        "and picking a price to convert at would bury a structural difference "
-        "inside a constant. Measure it from position.swap instead"
+        "the mode DECLARES the rate to be quoted in the symbol's BASE currency "
+        "-- ounces of gold here -- which would make the account-currency "
+        "charge proportional to the price at the moment of charging, and no "
+        "fixed points rate can represent that. `[MEASURED]` 2026-08-01 the "
+        "charge came back equal to this field at FACE VALUE in the deposit "
+        "currency, which the declared mode does not predict, so the mode does "
+        "not describe the charging rule on this symbol either. The refusal "
+        "therefore stands on the stronger ground: the units are not what the "
+        "field says they are. Measure it from position.swap instead"
     ),
     SwapMode.INTEREST_CURRENT: (
         "the rate is an annual interest percentage on the current price, and "
@@ -348,9 +408,13 @@ class WeeklyComparison:
 
     Attributes:
         side: ``"long"`` or ``"short"``.
-        source: ``"declared"`` when read from the broker's published rate,
-            ``"measured"`` when derived from what open positions were actually
-            charged.
+        source: :data:`SOURCE_DECLARED` when read from the broker's published
+            rate, or one of :data:`SOURCE_MEASURED_DAY` /
+            :data:`SOURCE_MEASURED_NIGHT` when derived from what open positions
+            were actually charged. **The measured labels name their
+            denominator**, because the two differ on any hold that is not a
+            whole number of weeks and a ratio without its denominator cannot be
+            checked by the person reading it.
         registered_points: Registered weekly financing, points per lot.
         broker_points: The broker's weekly financing, points per lot.
         ratio: ``broker / registered``. ``None`` when the registered figure is
@@ -387,9 +451,19 @@ class SwapDivergence:
             the registered substitute is wrong in kind rather than in degree.
         declared_long_points: Published nightly charge, points per lot.
         declared_short_points: Published nightly charge, points per lot.
+        published_swap_long: ``symbol_info().swap_long`` exactly as read, in
+            whatever units ``swap_mode`` implies and with the broker's sign.
+            Carried **unconverted** so that a refusal to interpret the field
+            does not also lose it: whether the broker re-quotes this number as
+            the price moves is the one thing that separates a fixed rate from a
+            price-dependent one at a single price, and it can only be answered
+            by logging the raw field over time.
+        published_swap_short: The same for the short side.
         measured_daily_points: Nightly-equivalent charge per lot derived from
             open positions, per calendar day. ``None`` when no position has
             been open long enough.
+        measured_nightly_points: The same charge per **midnight crossed**.
+            Empty when no server clock was available.
         comparisons: Every comparison that could be made.
         short_is_credited: Whether the broker pays the account to hold a
             short, which the registered model cannot represent.
@@ -402,7 +476,10 @@ class SwapDivergence:
     mode_is_price_dependent: bool
     declared_long_points: float | None
     declared_short_points: float | None
+    published_swap_long: float | None
+    published_swap_short: float | None
     measured_daily_points: dict[str, float]
+    measured_nightly_points: dict[str, float]
     comparisons: tuple[WeeklyComparison, ...]
     short_is_credited: bool | None
     notes: tuple[str, ...]
@@ -508,6 +585,9 @@ def swap_divergence(
     mode: SwapMode | None = None,
     currency_per_point: float | None = None,
     notional_per_lot: float | None = None,
+    measured_nightly_points: dict[str, float] | None = None,
+    published_swap_long: float | None = None,
+    published_swap_short: float | None = None,
 ) -> SwapDivergence:
     """Compare the broker's financing against the registered substitute.
 
@@ -527,6 +607,13 @@ def swap_divergence(
             annualised basis.
         notional_per_lot: Contract size times current price, for the annualised
             basis.
+        measured_nightly_points: The same charge divided by midnights crossed
+            rather than by calendar days. This is the like-for-like basis
+            against the registered constant; the calendar-day one is what the
+            projection uses. Both are compared and both are labelled.
+        published_swap_long: ``swap_long`` exactly as read, carried through
+            whether or not it could be converted.
+        published_swap_short: ``swap_short`` exactly as read.
 
     Returns:
         The finding. ``verdict`` is ``UNAVAILABLE`` only when neither route
@@ -552,7 +639,7 @@ def swap_divergence(
         comparisons.append(
             _compare(
                 "long",
-                "declared",
+                SOURCE_DECLARED,
                 REGISTERED_WEEKLY_LONG_POINTS,
                 declared_long * SWAP_UNITS_PER_WEEK,
                 REGISTERED_LONG_POINTS,
@@ -565,7 +652,7 @@ def swap_divergence(
         comparisons.append(
             _compare(
                 "short",
-                "declared",
+                SOURCE_DECLARED,
                 REGISTERED_WEEKLY_SHORT_POINTS,
                 declared_short * SWAP_UNITS_PER_WEEK,
                 REGISTERED_SHORT_POINTS,
@@ -589,14 +676,18 @@ def swap_divergence(
     if price_dependent and effective_mode is not None:
         notes.insert(
             0,
-            f"swap_mode is {effective_mode.name}, so the account-currency "
-            f"charge is a FUNCTION OF PRICE, not a constant. The registered "
-            f"substitute is a fixed points rate and is therefore wrong in kind "
-            f"rather than in magnitude: no value of it would have been right. "
-            f"Every cost-dependent result in HYPOTHESES.md priced financing "
-            f"with a structure this broker does not use",
+            f"swap_mode is {effective_mode.name}, which DECLARES the "
+            f"account-currency charge to be a FUNCTION OF PRICE rather than a "
+            f"constant. The registered substitute is a fixed points rate with "
+            f"no price term, so if the declaration holds no value of it would "
+            f"have been right -- wrong in kind, not in magnitude. **Whether it "
+            f"holds is UNDETERMINED**: see risk.carry_log, which needs five "
+            f"charging events and a price path that reverses twice, and had "
+            f"neither as of 2026-08-01. The registered substitute is not "
+            f"vindicated by that -- an untested structure is untested",
         )
 
+    nightly = dict(measured_nightly_points or {})
     for side, per_day in sorted(measured_daily_points.items()):
         registered_weekly = (
             REGISTERED_WEEKLY_LONG_POINTS
@@ -609,19 +700,51 @@ def swap_divergence(
         # DAYS_PER_WEEK, not SWAP_UNITS_PER_WEEK. The two are the same number
         # and they mean different things: the measured figure is already a
         # per-calendar-day rate, so it scales by calendar days.
-        comparisons.append(
-            _compare(
-                side,
-                "measured",
-                registered_weekly,
-                per_day * DAYS_PER_WEEK,
-                registered_nightly,
-                per_day,
-                measured_tolerance,
-                currency_per_point,
-                notional_per_lot,
-            )
+        by_day = _compare(
+            side,
+            SOURCE_MEASURED_DAY,
+            registered_weekly,
+            per_day * DAYS_PER_WEEK,
+            registered_nightly,
+            per_day,
+            measured_tolerance,
+            currency_per_point,
+            notional_per_lot,
         )
+        comparisons.append(by_day)
+
+        per_night = nightly.get(side)
+        if per_night is None:
+            continue
+        # REGISTERED_NIGHTS_PER_WEEK here, because this figure is per night and
+        # scales by nights. The three sevens in this module are three different
+        # quantities and are never spelled the same way.
+        by_night = _compare(
+            side,
+            SOURCE_MEASURED_NIGHT,
+            registered_weekly,
+            per_night * REGISTERED_NIGHTS_PER_WEEK,
+            registered_nightly,
+            per_night,
+            measured_tolerance,
+            currency_per_point,
+            notional_per_lot,
+        )
+        comparisons.append(by_night)
+        if (
+            by_day.ratio is not None
+            and by_night.ratio is not None
+            and by_night.ratio != 0
+            and abs(by_day.ratio / by_night.ratio - 1.0) > BASIS_DISAGREEMENT
+        ):
+            notes.append(
+                f"the {side} side reads {by_day.ratio:.2f}x per calendar day "
+                f"and {by_night.ratio:.2f}x per night. Both are correct on "
+                f"their own denominator and they differ because the hold is "
+                f"not a whole number of weeks; over one it would be the same "
+                f"number. **{by_night.ratio:.2f}x is the figure to quote** "
+                f"against a registered constant that is itself per night"
+            )
 
     if not comparisons:
         return SwapDivergence(
@@ -631,7 +754,10 @@ def swap_divergence(
             mode_is_price_dependent=price_dependent,
             declared_long_points=None,
             declared_short_points=None,
+            published_swap_long=published_swap_long,
+            published_swap_short=published_swap_short,
             measured_daily_points={},
+            measured_nightly_points={},
             comparisons=(),
             short_is_credited=None,
             notes=(
@@ -685,7 +811,10 @@ def swap_divergence(
         mode_is_price_dependent=price_dependent,
         declared_long_points=declared_long,
         declared_short_points=declared_short,
+        published_swap_long=published_swap_long,
+        published_swap_short=published_swap_short,
         measured_daily_points=dict(measured_daily_points),
+        measured_nightly_points=nightly,
         comparisons=tuple(comparisons),
         short_is_credited=short_credited,
         notes=tuple(notes),

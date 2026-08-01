@@ -284,3 +284,54 @@ def test_the_reading_time_is_the_only_clock_the_report_reads() -> None:
     )
     assert later.generated_at == fixtures.NOW + timedelta(days=1)
     assert later.carries[0].days_open == pytest.approx(3.0)
+
+
+# --------------------------------------------------------------------------
+# The 2026-08-01 reading, end to end
+# --------------------------------------------------------------------------
+
+
+def test_the_live_reading_reproduces_both_ratios_through_the_whole_assembly() -> None:
+    # `[MEASURED]` FxPro GOLD, 0.10 lots long, charged 13.58 across two
+    # charging events, read 44.769 hours after the open. The tool displayed
+    # 3.64x. This pins where that number comes from: the calendar-day
+    # denominator, not a five-night registered week -- which would have printed
+    # 5.10x -- and not any residue of the retracted rollover claim.
+    fxpro = fixtures.gold(swap_mode=2, swap_long=-67.9, swap_short=27.0)
+    held = fixtures.position(
+        opened_at=fixtures.NOW - timedelta(hours=44.769),
+        swap=-13.58,
+        price_open=4_090.0,
+        price_current=4_042.0,
+    )
+    report = _report(positions=(held,), terms={"XAUUSD": fxpro})
+    finding = report.swap[0]
+
+    assert finding.verdict is SwapVerdict.REGISTERED_IS_OPTIMISTIC
+    assert finding.mode_is_price_dependent
+    # The published rate could not be converted, and was kept anyway.
+    assert finding.declared_long_points is None
+    assert finding.published_swap_long == pytest.approx(-67.9)
+
+    by_day = next(c for c in finding.comparisons if c.source == "measured/day")
+    by_night = next(c for c in finding.comparisons if c.source == "measured/night")
+    assert by_day.ratio == pytest.approx(3.64, abs=5e-3)
+    assert by_night.ratio == pytest.approx(3.395, abs=5e-4)
+    assert by_night.broker_points == pytest.approx(475.3)
+    assert by_night.registered_points == pytest.approx(140.0)
+
+    # The measured per-night charge equals the published field to the digit,
+    # which is what rules out reading that field as ounces at face value.
+    assert finding.measured_nightly_points["long"] == pytest.approx(67.9)
+
+
+def test_the_registered_denominator_in_the_assembled_report_is_seven_nights() -> None:
+    # The number that would have been printed had the retracted five-night
+    # claim survived into the arithmetic. It is not the number that is printed.
+    report = _report(
+        positions=(fixtures.position(swap=-13.58),),
+        terms={"XAUUSD": fixtures.gold(swap_mode=2, swap_long=-67.9)},
+    )
+    for c in report.swap[0].comparisons:
+        assert c.registered_points == pytest.approx(140.0)
+        assert c.registered_points != pytest.approx(100.0)

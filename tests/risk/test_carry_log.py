@@ -336,3 +336,112 @@ def test_the_thresholds_are_the_ones_written_before_the_data() -> None:
     assert POWER_MARGIN == 3.0
     assert SEPARATION_FACTOR == 3.0
     assert MIN_RESOLVED_NIGHTS == 5
+
+
+# --------------------------------------------------------------------------
+# The published field: watched, reported, never acted on
+# --------------------------------------------------------------------------
+
+
+def _with_field(rows: list[CarryRow], values: list[float | None]) -> list[CarryRow]:
+    """Attach a published swap_long to each row.
+
+    Args:
+        rows: Readings.
+        values: One field value per row, or ``None`` for a row that predates
+            the field being logged.
+
+    Returns:
+        New rows.
+    """
+    return [
+        CarryRow(
+            at=r.at,
+            ticket=r.ticket,
+            carry_paid=r.carry_paid,
+            price=r.price,
+            volume=r.volume,
+            server_offset_hours=r.server_offset_hours,
+            published_swap_long=v,
+        )
+        for r, v in zip(rows, values, strict=True)
+    ]
+
+
+def test_a_log_without_the_field_says_unknown_rather_than_stable() -> None:
+    # Rows written before 2026-08-01 carry no field. Reading their silence as
+    # "the rate held" would manufacture evidence for FIXED_RATE out of an
+    # instrument that was not looking.
+    result = analyse(_week(LIVELY, price_dependent=True))
+    assert result.field.changed is None
+    assert result.field.readings == 0
+    note = next(n for n in result.notes if "published swap_long" in n)
+    assert "not the same as the rate having held" in note
+
+
+def test_a_field_that_never_moves_is_reported_with_its_coverage() -> None:
+    rows = _week(LIVELY, price_dependent=False)
+    result = analyse(_with_field(rows, [-67.9] * len(rows)))
+    assert result.field.changed is False
+    assert result.field.distinct == (-67.9,)
+    assert result.field.spans_the_charges
+    assert any("held at -67.9" in n for n in result.notes)
+
+
+def test_a_re_quoted_field_is_named_as_a_step_not_as_price_dependence() -> None:
+    rows = _week(MONOTONE, price_dependent=False, step_after=2)
+    values: list[float | None] = [-67.9 if i <= 3 else -69.9 for i in range(len(rows))]
+    result = analyse(_with_field(rows, values))
+    assert result.field.changed is True
+    assert result.field.distinct == (-67.9, -69.9)
+    note = next(n for n in result.notes if "distinct values" in n)
+    assert "FIXED_RATE with a step, not price-dependence" in note
+
+
+def test_watching_the_field_changes_no_verdict() -> None:
+    # The discriminator was added after data existed. It reports; it must not
+    # decide, or the pre-committed test stops being pre-committed.
+    rows = _week(LIVELY, price_dependent=True)
+    bare = analyse(rows)
+    watched = analyse(_with_field(rows, [-67.9] * len(rows)))
+    assert watched.verdict is bare.verdict
+    assert watched.power == bare.power
+    assert watched.cv_unit_charge == bare.cv_unit_charge
+
+
+def test_the_field_is_parsed_when_present_and_absent() -> None:
+    with_field = '{"at": "2026-08-01T00:00:00+00:00", "ticket": 7, "carry_paid": 1.0, \
+"price": 4000.0, "volume": 0.1, "server_offset_hours": 3.0, \
+"published_swap_long": -67.9}'
+    without = '{"at": "2026-08-01T00:01:00+00:00", "ticket": 7, "carry_paid": 1.0, \
+"price": 4000.0, "volume": 0.1, "server_offset_hours": 3.0}'
+    rows = parse_rows([with_field, without])
+    assert rows[0].published_swap_long == pytest.approx(-67.9)
+    assert rows[1].published_swap_long is None
+
+
+# --------------------------------------------------------------------------
+# The two-night window that was actually measured
+# --------------------------------------------------------------------------
+
+
+def test_two_monotone_nights_are_undetermined_and_say_which_conditions_failed() -> None:
+    # `[MEASURED]` 2026-08-01: two charging events, a monotone price path.
+    # The magnitude comes out; the structure does not, and the reasons are the
+    # night count and the absence of reversals -- not the price being flat.
+    rows = _week([4_083.82, 4_058.09], price_dependent=False)
+    result = analyse(rows)
+
+    assert result.verdict is StructureVerdict.UNDETERMINED
+    assert not result.power.has_power
+    assert result.power.resolved_nights == 2
+    assert any("only 2 charging events" in r for r in result.power.reasons)
+    assert any("changed direction 0 times" in r for r in result.power.reasons)
+    # The range condition is the one that PASSED, and it is worth pinning
+    # separately: the window failed on shape, not on resolution.
+    assert result.power.price_range_fraction is not None
+    assert result.power.required_range_fraction is not None
+    assert result.power.price_range_fraction > result.power.required_range_fraction
+    assert not any("posting resolution" in r for r in result.power.reasons)
+    # And the magnitude is settled regardless.
+    assert result.charge_per_lot_per_night == pytest.approx(67.9)

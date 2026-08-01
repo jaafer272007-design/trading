@@ -322,3 +322,233 @@ def test_status_needs_no_terminal_and_therefore_no_windows(tmp_path: Path) -> No
     # monitor alive" is exactly the question asked after something died.
     code = ADAPTER.main(["--status", "--state-dir", str(tmp_path)])
     assert code == 2
+
+
+# --------------------------------------------------------------------------
+# Every reading mode, driven end to end against a fake terminal
+# --------------------------------------------------------------------------
+#
+# `--once` unpacked a three-tuple into two names and raised ValueError on every
+# invocation. Nothing exercised it, `scripts/` is outside mypy's file list, and
+# so a mode that could never have run shipped twice. These tests are the guard
+# that was missing, and they are what caught it.
+
+
+class _Fields:
+    """A namespace whose attributes are whatever it was built with."""
+
+    def __init__(self, **fields: object) -> None:
+        self.__dict__.update(fields)
+
+
+class _FakeMT5:
+    """The smallest MetaTrader5 that the adapter's read path accepts.
+
+    Not a simulator. It returns one fixed reading, which is all that is needed
+    to answer "does this mode run, and does it record what it read".
+    """
+
+    POSITION_TYPE_BUY: Final = 0
+    ORDER_TYPE_BUY: Final = 0
+    ORDER_TYPE_SELL: Final = 1
+    TIMEFRAME_H1: Final = 16385
+    ACCOUNT_TRADE_MODE_DEMO: Final = 0
+    DEAL_ENTRY_IN: Final = 0
+
+    def __init__(self, *, positions: bool = True) -> None:
+        self._positions = positions
+        self.shutdown_calls = 0
+
+    def version(self) -> tuple[int, int, str]:
+        return (5, 4620, "10 Jan 2026")
+
+    def last_error(self) -> tuple[int, str]:
+        return (1, "ok")
+
+    def terminal_info(self) -> _Fields:
+        return _Fields(
+            connected=True, trade_allowed=True, build=4620, company="Test Broker"
+        )
+
+    def account_info(self) -> _Fields:
+        a = fixtures.account()
+        return _Fields(
+            currency=a.currency,
+            balance=a.balance,
+            equity=a.equity,
+            margin=a.margin,
+            margin_free=a.margin_free,
+            margin_level=a.margin_level,
+            margin_so_call=a.margin_so_call,
+            margin_so_so=a.margin_so_so,
+            margin_so_mode=a.margin_so_mode,
+            leverage=a.leverage,
+            trade_mode=self.ACCOUNT_TRADE_MODE_DEMO,
+        )
+
+    def symbol_info(self, name: str) -> _Fields | None:
+        if name != "XAUUSD":
+            return None
+        t = fixtures.gold()
+        return _Fields(
+            name=t.name,
+            digits=t.digits,
+            point=t.point,
+            trade_tick_size=t.trade_tick_size,
+            trade_tick_value=t.trade_tick_value,
+            trade_contract_size=t.trade_contract_size,
+            volume_min=t.volume_min,
+            volume_max=t.volume_max,
+            volume_step=t.volume_step,
+            spread=t.spread_points,
+            spread_float=t.spread_is_floating,
+            swap_mode=2,
+            swap_long=-67.9,
+            swap_short=27.0,
+            swap_rollover3days=t.swap_rollover_3days_weekday,
+            currency_base=t.currency_base,
+            currency_profit=t.currency_profit,
+            currency_margin=t.currency_margin,
+        )
+
+    def symbol_select(self, name: str, enable: bool) -> bool:
+        return True
+
+    def symbol_info_tick(self, name: str) -> _Fields:
+        # Three hours ahead of true UTC, matching the fixture server.
+        server_now = datetime.now(UTC) + timedelta(hours=fixtures.SERVER_OFFSET_HOURS)
+        return _Fields(time=int(server_now.timestamp()), ask=4_042.0, bid=4_041.8)
+
+    def positions_get(self) -> tuple[_Fields, ...]:
+        if not self._positions:
+            return ()
+        p = fixtures.position()
+        opened_server = p.opened_at + timedelta(hours=fixtures.SERVER_OFFSET_HOURS)
+        return (
+            _Fields(
+                ticket=p.ticket,
+                symbol=p.symbol,
+                type=self.POSITION_TYPE_BUY,
+                volume=p.volume,
+                price_open=p.price_open,
+                price_current=p.price_current,
+                time=int(opened_server.timestamp()),
+                sl=p.stop_loss or 0.0,
+                tp=0.0,
+                swap=-13.58,
+                profit=p.profit,
+            ),
+        )
+
+    def order_calc_margin(
+        self, order_type: int, symbol: str, volume: float, price: float
+    ) -> float:
+        return 481.44
+
+    def history_deals_get(self, start: datetime, end: datetime) -> tuple[()]:
+        return ()
+
+    def copy_rates_from_pos(
+        self, symbol: str, timeframe: int, start: int, count: int
+    ) -> list[dict[str, float]]:
+        return [
+            {"high": 4_050.0 + i, "low": 4_040.0 + i, "close": 4_045.0 + i}
+            for i in range(count)
+        ]
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
+
+
+@pytest.fixture
+def fake_mt5(monkeypatch: pytest.MonkeyPatch) -> _FakeMT5:
+    """Install a fake terminal into the adapter's entry point."""
+    fake = _FakeMT5()
+    monkeypatch.setattr(ADAPTER, "require_mt5", lambda: fake)
+    return fake
+
+
+def _rows(path: Path) -> list[dict[str, object]]:
+    if not path.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_once_runs_at_all(
+    fake_mt5: _FakeMT5, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # It did not. It raised ValueError unpacking take_reading's three values
+    # into two names, on every invocation, in both shipped versions.
+    code = ADAPTER.main(["--once", "--state-dir", str(tmp_path)])
+    assert code in (0, 1, 2)
+    assert "SWAP" in capsys.readouterr().out
+
+
+def test_once_records_the_reading_it_just_printed(
+    fake_mt5: _FakeMT5, tmp_path: Path
+) -> None:
+    ADAPTER.main(["--once", "--state-dir", str(tmp_path)])
+    rows = _rows(tmp_path / "carry.jsonl")
+    assert len(rows) == 1
+    assert rows[0]["carry_paid"] == pytest.approx(13.58)
+
+
+def test_probe_records_the_reading_it_just_printed(
+    fake_mt5: _FakeMT5, tmp_path: Path
+) -> None:
+    # The urgent one: a week of manual --probe reads has to accumulate rows, or
+    # it produces a swap total and no increments and the structural test has
+    # nothing to read.
+    ADAPTER.main(["--probe", "--state-dir", str(tmp_path)])
+    rows = _rows(tmp_path / "carry.jsonl")
+    assert len(rows) == 1
+    assert rows[0]["carry_paid"] == pytest.approx(13.58)
+    assert rows[0]["price"] == pytest.approx(4_042.0)
+    assert rows[0]["published_swap_long"] == pytest.approx(-67.9)
+
+
+def test_repeated_probes_accumulate_rather_than_overwrite(
+    fake_mt5: _FakeMT5, tmp_path: Path
+) -> None:
+    # Manual reads are the measurement. Each one must add to the series.
+    for _ in range(3):
+        ADAPTER.main(["--probe", "--state-dir", str(tmp_path)])
+    assert len(_rows(tmp_path / "carry.jsonl")) == 3
+
+
+def test_the_probe_says_where_the_row_went_and_how_many_are_there(
+    fake_mt5: _FakeMT5, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    ADAPTER.main(["--probe", "--state-dir", str(tmp_path)])
+    out = capsys.readouterr().out
+    assert "carry log" in out
+    assert "rows appended by this run" in out
+    assert "analyse_carry_log.py" in out
+
+
+def test_a_probe_on_a_flat_account_says_it_recorded_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Silence here would look identical to a week of successful readings.
+    monkeypatch.setattr(ADAPTER, "require_mt5", lambda: _FakeMT5(positions=False))
+    ADAPTER.main(["--probe", "--state-dir", str(tmp_path)])
+    assert "NOTHING WAS RECORDED" in capsys.readouterr().out
+    assert _rows(tmp_path / "carry.jsonl") == []
+
+
+def test_size_runs_and_records_nothing(fake_mt5: _FakeMT5, tmp_path: Path) -> None:
+    # --size answers a forward question and reads no position's history, so it
+    # is the one reading mode that must NOT append.
+    assert ADAPTER.main(["--size", "--state-dir", str(tmp_path)]) == 0
+    assert _rows(tmp_path / "carry.jsonl") == []
+
+
+def test_every_mode_shuts_the_terminal_down(fake_mt5: _FakeMT5, tmp_path: Path) -> None:
+    ADAPTER.main(["--probe", "--state-dir", str(tmp_path)])
+    ADAPTER.main(["--once", "--state-dir", str(tmp_path)])
+    ADAPTER.main(["--size", "--state-dir", str(tmp_path)])
+    assert fake_mt5.shutdown_calls == 3

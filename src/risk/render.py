@@ -218,17 +218,24 @@ def _render_swap(divergences: tuple[SwapDivergence, ...]) -> list[str]:
         for side, per_day in sorted(d.measured_daily_points.items()):
             lines.append(
                 _row(
-                    f"measured charge, {side}",
+                    f"measured charge/day, {side}",
                     f"{per_day:+.3f} points/lot/calendar day",
+                )
+            )
+        for side, per_night in sorted(d.measured_nightly_points.items()):
+            lines.append(
+                _row(
+                    f"measured charge/night, {side}",
+                    f"{per_night:+.3f} points/lot/night crossed",
                 )
             )
         if d.comparisons:
             lines.append("")
             lines.append(
-                "      side   source     registered   broker     ratio  "
+                "      side   source         registered   broker     ratio  "
                 "exceeds   reg%/yr  brk%/yr"
             )
-            lines.append("      " + "-" * 74)
+            lines.append("      " + "-" * 78)
             for c in d.comparisons:
                 ratio = f"{c.ratio:.2f}x" if c.ratio is not None else "n/a"
                 flag = "YES" if c.exceeds else "no"
@@ -243,13 +250,16 @@ def _render_swap(divergences: tuple[SwapDivergence, ...]) -> list[str]:
                     else "  -  "
                 )
                 lines.append(
-                    f"      {c.side:<6} {c.source:<9}  {c.registered_points:>9.1f}  "
+                    f"      {c.side:<6} {c.source:<13}  {c.registered_points:>9.1f}  "
                     f"{c.broker_points:>9.1f}  {ratio:>6}  {flag:<7}  "
                     f"{reg_pct:>7}  {brk_pct:>7}"
                 )
             lines.append("      points per lot per calendar week; %/yr of one")
             lines.append("      lot's notional, the only basis a price-dependent")
-            lines.append("      swap leaves invariant")
+            lines.append("      swap leaves invariant. The measured rows name")
+            lines.append("      their denominator: the two agree over a whole")
+            lines.append("      week and not below one, and only measured/night")
+            lines.append("      shares the registered constant's unit")
         for note in d.notes:
             lines += _wrap(note, bullet="- ")
 

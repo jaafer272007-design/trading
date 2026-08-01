@@ -121,8 +121,55 @@ COMMISSION_POINTS_PER_LOT_PER_SIDE: Final = 3.5
 #:    2. **Sign.** The broker CREDITS the short side. :func:`swap_points`
 #:       charges it, on the stated ground that a credit is an optimistic
 #:       assumption about an unobserved rate. It is now observed.
-#:    3. **Magnitude.** Roughly 3.4x too low on the long side, under a reading
-#:       the field alone cannot confirm.
+#:    3. **Magnitude.** `[MEASURED]` 2026-08-01, **3.395x too low on the long
+#:       side**: a live 0.10-lot long was charged 13.58 across two charging
+#:       events, which is 67.9 points per lot per night. The short side is
+#:       still unmeasured.
+#:
+#: .. note::
+#:
+#:    **A fourth objection, which needs no broker at all.** The three above rest
+#:    on readings of one account. This one is a property of the *functional
+#:    form* below and would hold if no terminal had ever been opened.
+#:
+#:    A charge fixed in **points per lot per night** implies an annualised
+#:    financing rate, as a percentage of notional, of
+#:
+#:    .. math::
+#:
+#:       r(P) = \\frac{\\text{points} \\times \\text{point value} \\times 365}
+#:                    {\\text{contract size} \\times P}
+#:
+#:    which is **inversely proportional to price**. `[MEASURED]` against this
+#:    project's own snapshot over the H-006 window, 2015-09-11 to 2026-07-27,
+#:    at 20 points, 1.00 a point and 100 ounces a lot:
+#:
+#:    ==============================  ==========  ====================
+#:    point in the window             gold        implied rate
+#:    ==============================  ==========  ====================
+#:    opens, 2015-09-11               1,111.72    **6.57% a year**
+#:    window low                      1,050.02    **6.95% a year**
+#:    window high                     5,562.51    **1.31% a year**
+#:    closes, 2026-07-24              4,052.85    **1.80% a year**
+#:    ==============================  ==========  ====================
+#:
+#:    So this constant does not represent one financing rate over the window. It
+#:    represents a rate that **falls by a factor of 5.30 as the price rises**,
+#:    monotonically, with no reference to any interest rate. Over the same span
+#:    the dollar policy rate went from near zero to several percent — the
+#:    *opposite* direction. And the argument is symmetric, which is what makes
+#:    it decisive rather than merely awkward: **no single points constant can be
+#:    right at both ends.** Calibrate it to 2015 and it is 5.3x too small by
+#:    2026; calibrate it to 2026 — 67.9 points — and it implies **22.3% a year**
+#:    at the window's opening price.
+#:
+#:    This bears on the **whole 2015-2026 window** rather than on one week, and
+#:    it is **reasoning, not a result**: it says the registered structure cannot
+#:    be right, not what the right structure is or what any run should have
+#:    charged. Nothing here licenses a retro-fit. ``HYPOTHESES.md`` H-005,
+#:    2026-08-01. The arithmetic is pinned in ``tests/backtest/test_costs.py``.
+#:
+#: .. warning::
 #:
 #:    They are **not changed here.** Changing a registered constant after the
 #:    runs that used it is hypothesis laundering, and ``RESEARCH.md`` §5.2

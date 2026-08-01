@@ -6,12 +6,14 @@ pins arithmetic so that a failure can be attributed.
 """
 
 from pathlib import Path
+from typing import Final
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from backtest.costs import (
+    POINT_VALUE_PER_LOT,
     SCHEDULED_NEWS_MULTIPLIER,
     SPREAD_FLOOR_POINTS,
     SWAP_LONG_POINTS_PER_LOT_PER_NIGHT,
@@ -226,3 +228,81 @@ def test_the_registered_swap_constants_have_not_been_edited_in_response() -> Non
     # editing the module cannot also edit the assertion.
     assert SWAP_LONG_POINTS_PER_LOT_PER_NIGHT == 20.0
     assert SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT == 8.0
+
+
+# --------------------------------------------------------------------------
+# The structural objection that needs no broker reading
+# --------------------------------------------------------------------------
+
+
+#: `[MEASURED]` closing prices from this project's own snapshot,
+#: ``GOLD-H1-20080311-20260727.csv``, over the H-006 window. Restated as
+#: literals so that the assertion does not depend on reading 65,375 rows in a
+#: unit test, and so that a change to the snapshot shows up as a failure here
+#: rather than as a silently different number.
+WINDOW_OPEN_PRICE: Final = 1_111.72  # 2015-09-11
+WINDOW_LOW_PRICE: Final = 1_050.02
+WINDOW_HIGH_PRICE: Final = 5_562.51
+WINDOW_CLOSE_PRICE: Final = 4_052.85  # 2026-07-24
+CONTRACT_OUNCES: Final = 100.0
+DAYS_PER_YEAR: Final = 365.0
+
+
+def _implied_annual_pct(points: float, price: float) -> float:
+    """Annualise a fixed points charge as a percentage of one lot's notional.
+
+    Args:
+        points: Charge in points per lot per night.
+        price: Gold price.
+
+    Returns:
+        Percent per year.
+    """
+    return (
+        100.0 * points * POINT_VALUE_PER_LOT * DAYS_PER_YEAR / (CONTRACT_OUNCES * price)
+    )
+
+
+def test_a_fixed_points_charge_implies_a_rate_that_falls_as_the_price_rises() -> None:
+    # The objection that needs no terminal: the registered constant is not one
+    # financing rate over the window, it is a rate inversely proportional to
+    # price. Reasoning about the model's own functional form, not a result.
+    opens = _implied_annual_pct(SWAP_LONG_POINTS_PER_LOT_PER_NIGHT, WINDOW_OPEN_PRICE)
+    closes = _implied_annual_pct(SWAP_LONG_POINTS_PER_LOT_PER_NIGHT, WINDOW_CLOSE_PRICE)
+    assert opens == pytest.approx(6.57, abs=5e-3)
+    assert closes == pytest.approx(1.80, abs=5e-3)
+    assert opens > closes
+
+
+def test_the_implied_rate_spans_the_price_ratio_across_the_whole_window() -> None:
+    at_low = _implied_annual_pct(SWAP_LONG_POINTS_PER_LOT_PER_NIGHT, WINDOW_LOW_PRICE)
+    at_high = _implied_annual_pct(SWAP_LONG_POINTS_PER_LOT_PER_NIGHT, WINDOW_HIGH_PRICE)
+    assert at_low == pytest.approx(6.95, abs=5e-3)
+    assert at_high == pytest.approx(1.31, abs=5e-3)
+    # The span is exactly the price ratio, inverted. That equality is the
+    # argument: the variation is the price path and nothing else.
+    assert at_low / at_high == pytest.approx(WINDOW_HIGH_PRICE / WINDOW_LOW_PRICE)
+    assert at_low / at_high == pytest.approx(5.30, abs=5e-3)
+
+
+def test_no_single_points_constant_is_right_at_both_ends_of_the_window() -> None:
+    # Symmetry is what makes the objection decisive rather than awkward.
+    # Calibrating to 2026 -- the 67.9 that was measured -- implies an absurd
+    # rate at the window's opening price.
+    measured_2026 = 67.9
+    assert _implied_annual_pct(measured_2026, WINDOW_OPEN_PRICE) == pytest.approx(
+        22.29, abs=5e-3
+    )
+    assert _implied_annual_pct(measured_2026, WINDOW_CLOSE_PRICE) == pytest.approx(
+        6.115, abs=5e-3
+    )
+
+
+def test_the_structural_objection_is_recorded_where_the_constants_are() -> None:
+    # A note with no test behind it, again. RETROSPECTIVE-2.md Sec 1.2.
+    source = Path("src/backtest/costs.py").read_text(encoding="utf-8")
+    assert "A fourth objection, which needs no broker at all" in source
+    assert "inversely proportional to price" in source
+    assert "no single points constant can be" in source
+    # And it must keep saying what it is not.
+    assert "reasoning, not a result" in source

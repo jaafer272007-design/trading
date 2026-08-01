@@ -334,3 +334,72 @@ def test_the_reading_time_is_the_only_clock_anything_here_reads() -> None:
     )
     assert later.days_open == pytest.approx(3.0)
     assert later.opened_at == datetime(2026, 7, 27, 14, 30, tzinfo=UTC)
+
+
+# --------------------------------------------------------------------------
+# Two measured denominators
+# --------------------------------------------------------------------------
+
+
+def test_the_measured_charge_is_reported_per_night_as_well_as_per_day() -> None:
+    # The default fixture is exactly two days old and crosses two midnights, so
+    # the two bases coincide and the arithmetic is checkable by hand.
+    carry = _carry()
+    assert carry.days_open == pytest.approx(2.0)
+    assert carry.nights_held == 2
+    assert carry.rate_measured_per_day == pytest.approx(1.0)
+    assert carry.rate_measured_per_night == pytest.approx(1.0)
+
+
+def test_a_sub_week_hold_separates_the_two_denominators() -> None:
+    # `[MEASURED]` the 2026-08-01 reading: 13.58 charged on 0.10 lots over
+    # 44.769 hours, two midnights crossed. Per calendar day it is 7.28; per
+    # night it is 6.79. Neither number is wrong and they are not the same
+    # quantity.
+    position = fixtures.position(
+        opened_at=fixtures.NOW - timedelta(hours=44.769), swap=-13.58
+    )
+    carry = _carry(position)
+    assert carry.nights_held == 2
+    assert carry.rate_measured_per_day == pytest.approx(7.2800, abs=1e-4)
+    assert carry.rate_measured_per_night == pytest.approx(6.79)
+    note = next(n for n in carry.notes if "two measured bases disagree" in n)
+    assert "schedule, not a rate change" in note
+    assert "per-night figure is the one to compare" in note
+
+
+def test_agreeing_denominators_raise_no_note() -> None:
+    assert not any("two measured bases disagree" in n for n in _carry().notes)
+
+
+def test_without_a_server_clock_there_is_no_per_night_figure_to_guess_at() -> None:
+    carry = _carry(clock=None)
+    assert carry.nights_held is None
+    assert carry.rate_measured_per_day is not None
+    assert carry.rate_measured_per_night is None
+
+
+def test_the_book_reports_both_bases_for_the_registry_comparison() -> None:
+    position = fixtures.position(
+        opened_at=fixtures.NOW - timedelta(hours=44.769), swap=-13.58
+    )
+    carry = _carry(position)
+    book = portfolio_carry(
+        (carry,), (position,), {"XAUUSD": TERMS}, EQUITY, fixtures.NOW
+    )
+    assert book.per_lot_per_day_points["XAUUSD"]["long"] == pytest.approx(
+        72.800, abs=1e-3
+    )
+    assert book.per_lot_per_night_points["XAUUSD"]["long"] == pytest.approx(67.9)
+
+
+def test_a_book_with_no_clock_reports_no_nightly_basis_rather_than_a_wrong_one() -> (
+    None
+):
+    position = fixtures.position()
+    carry = _carry(position, clock=None)
+    book = portfolio_carry(
+        (carry,), (position,), {"XAUUSD": TERMS}, EQUITY, fixtures.NOW
+    )
+    assert book.per_lot_per_day_points["XAUUSD"]["long"] == pytest.approx(10.0)
+    assert book.per_lot_per_night_points == {}
