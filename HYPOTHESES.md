@@ -1536,12 +1536,44 @@ risk management" actually are**
 > **Nothing here licenses a retro-fit of the registry's cost model**, and no one may use
 > 67.9 to compute what H-003 or H-007 "should have" charged over 2015–2026.
 >
-> One observation about the longer horizon, marked as reasoning and not as measurement: a
-> charge fixed in *points* implies an annualised rate that **falls as gold rises**. The same
-> 20 points is 3.04% of notional at gold 2,400 and 1.81% at 4,042. Over a window in which
-> gold roughly tripled, a fixed points rate would mean a financing desk letting its
-> effective rate fall by two thirds and never repricing. That is an argument that months of
-> readings would separate the two hypotheses far more easily than a week — not a result.
+**A fourth objection to the registered structure, which needs no broker reading at all**
+
+> Findings 1–3 above rest on readings of one account. This one is a property of the
+> registered model's own **functional form** and would hold if no terminal had ever been
+> opened. It is **reasoning, not a result**, and it is recorded at the constants' own site in
+> `backtest/costs.py` as well as here.
+>
+> A charge fixed in **points per lot per night** implies an annualised financing rate, as a
+> percentage of notional, of `points × point value × 365 / (contract size × P)` — **inversely
+> proportional to price.** `[MEASURED]` against this project's own snapshot over the H-006
+> window, at 20 points, 1.00 a point and 100 ounces a lot:
+>
+> | point in the window | gold | implied rate |
+> |---|---|---|
+> | opens, 2015-09-11 | 1,111.72 | **6.57% a year** |
+> | window low | 1,050.02 | **6.95% a year** |
+> | window high | 5,562.51 | **1.31% a year** |
+> | closes, 2026-07-24 | 4,052.85 | **1.80% a year** |
+>
+> So `SWAP_LONG_POINTS_PER_LOT_PER_NIGHT` does not represent *a* financing rate over the
+> window. It represents a rate that **falls by a factor of 5.30 as the price rises**,
+> monotonically, with no reference to any interest rate — and the span is *exactly* the
+> price ratio inverted, which is the argument: the variation is the price path and nothing
+> else. Over the same span the dollar policy rate went from near zero to several percent,
+> the **opposite** direction.
+>
+> **The objection is symmetric, and that is what makes it decisive rather than awkward. No
+> single points constant can be right at both ends.** Calibrate to 2015 and it is 5.3x too
+> small by 2026; calibrate to 2026 — the 67.9 just measured — and it implies **22.29% a
+> year** at the window's opening price.
+>
+> **What this does and does not license.** It bears on the **whole 2015–2026 window** rather
+> than on one week, and it says the registered *structure* cannot be right. It does **not**
+> say what the right structure is, and it does not license computing what any run "should
+> have" charged — a constant that is wrong everywhere is not evidence for any particular
+> replacement. `RESEARCH.md` §5.2 is untouched: the constants stay as they are, and this is
+> a note beside them. The arithmetic is pinned in `tests/backtest/test_costs.py` so that it
+> is a test rather than a paragraph.
 
 ### H-006 — The evaluation window is a declared boundary, not a truncation
 

@@ -10,8 +10,8 @@
    appear in this repository, and ``tests/risk/test_scope.py`` fails the build
    if it ever does.
 
-   It writes two things and nothing else: a heartbeat file and, if configured,
-   an alert log. Both live where you point them.
+   It writes three things and nothing else: a heartbeat file, an alert log, and
+   the carry log. All live under ``--state-dir``.
 
 What it does
 ------------
@@ -61,6 +61,29 @@ provenance of every derived number, and every refusal, so that the adapter can
 be checked against a terminal before anything depends on it. **Run it on a demo
 account first**: until it has been read against a live terminal once, this
 adapter is unverified.
+
+Every mode that takes a reading appends to the carry log
+--------------------------------------------------------
+
+``--probe``, ``--once`` and the monitor all append one row per open position.
+This was not always true: until 2026-08-01 only the *continuous monitor* wrote
+rows, so a week of manual ``--probe`` reads would have produced a swap total
+and **no increments**, and the structural test in :mod:`risk.carry_log` reads
+increments. A tool that prints a measurement without recording it is not
+running the measurement.
+
+**One command that gives both the full report and a log row:**
+
+::
+
+    python scripts/risk_monitor.py --probe
+
+Run it on the same schedule the measurement needs — at least once between each
+pair of charging events, so every increment is bracketed. Nothing is lost by
+running it more often; identical consecutive rows are dropped when the
+increments are reconstructed. Read the accumulated log with::
+
+    python scripts/analyse_carry_log.py ~/.trading-risk/carry.jsonl
 """
 
 from __future__ import annotations
@@ -722,7 +745,7 @@ def take_reading(
 # --------------------------------------------------------------------------
 
 
-def append_carry_log(path: Path, report: RiskReport, price: float | None) -> None:
+def append_carry_log(path: Path, report: RiskReport, price: float | None) -> int:
     """Append one row per open position per reading.
 
     This is the instrument the swap finding needs. ``position.swap`` accumulates,
@@ -751,10 +774,15 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> Non
         path: File to append to.
         report: The reading just taken.
         price: Current price for the configured symbol, when known.
+
+    Returns:
+        Rows appended. Zero when no position is open, which is a fact worth
+        surfacing rather than a no-op: a week of readings on a flat account
+        records nothing and measures nothing.
     """
     published = {d.symbol: d for d in report.swap}
     if not report.carries:
-        return
+        return 0
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         for c in report.carries:
@@ -801,6 +829,23 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> Non
                 )
                 + "\n"
             )
+    return len(report.carries)
+
+
+def count_carry_rows(path: Path) -> int:
+    """Count rows already in a carry log.
+
+    Args:
+        path: The log file.
+
+    Returns:
+        Non-blank lines, or zero when the file does not exist.
+
+    """
+    if not path.exists():
+        return 0
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return sum(1 for line in lines if line.strip())
 
 
 def write_heartbeat(path: Path, report: RiskReport) -> None:
@@ -894,7 +939,7 @@ def report_status(path: Path, config: RiskConfig, now: datetime) -> int:
 def run_probe(
     mt5: Any,
     symbol: str,
-    cache_path: Path,
+    state_dir: Path,
     explicit_offset: float | None,
     config: RiskConfig,
 ) -> int:
@@ -903,10 +948,16 @@ def run_probe(
     This is the acceptance step. Nothing is summarised and nothing is hidden:
     if a figure below is wrong, the field it came from is on the same page.
 
+    **It also appends a carry-log row**, like every other mode that takes a
+    reading. The structural test in :mod:`risk.carry_log` works on *increments*
+    between readings, and a reading that is printed and not recorded
+    contributes nothing to it. A person taking manual probe reads across a week
+    is running the measurement; the tool must not silently decline to keep it.
+
     Args:
         mt5: The MetaTrader5 module.
         symbol: Symbol to read.
-        cache_path: Offset cache.
+        state_dir: Where the offset cache and the carry log live.
         explicit_offset: Command-line override.
         config: Operating limits.
 
@@ -914,14 +965,16 @@ def run_probe(
         Process exit code.
     """
     now = datetime.now(UTC)
+    cache_path = state_dir / OFFSET_CACHE_NAME
     terminal, account, positions, deals, terms, clock_reason = read_everything(
         mt5, symbol, cache_path, explicit_offset, now
     )
 
     header("0. WHAT THIS IS")
-    note("A read-only probe of one MT5 account. It predicts nothing, places")
-    note("nothing, and writes nothing except an offset cache. Every number")
-    note("below is arithmetic on a field the terminal published.")
+    note("A read-only probe of one MT5 account. It predicts nothing and places")
+    note("nothing. It writes two files: the offset cache, and one carry-log row")
+    note("per open position. Every number below is arithmetic on a field the")
+    note("terminal published.")
 
     header("1. TERMINAL AND CLOCK")
     version = mt5.version()
@@ -1044,7 +1097,24 @@ def run_probe(
     header("7. SIZING, AT THE CONFIGURED RISK")
     _print_sizing(mt5, terms.get(symbol), account, config)
 
-    header("8. WHAT TO CHECK BEFORE TRUSTING ANY OF THIS")
+    header("8. WHAT THIS READING CONTRIBUTED TO THE MEASUREMENT")
+    carry_log = state_dir / CARRY_LOG_NAME
+    written = append_carry_log(carry_log, report, price)
+    row("carry log", carry_log)
+    row("rows appended by this run", written)
+    row("rows in the log now", count_carry_rows(carry_log))
+    if written:
+        note("The structural test reads INCREMENTS between rows, so one row on")
+        note("its own settles nothing. Two rows either side of a charging event")
+        note("give one night; risk.carry_log needs five, and a price path that")
+        note("changes direction twice.")
+        note("Read it with:  python scripts/analyse_carry_log.py " + str(carry_log))
+    else:
+        note("NOTHING WAS RECORDED: no position is open. A week of probe reads")
+        note("on a flat account measures nothing, because the quantity being")
+        note("measured is what an open position is charged.")
+
+    header("9. WHAT TO CHECK BEFORE TRUSTING ANY OF THIS")
     note("1. The server offset above matches what the platform clock shows.")
     note("2. The swap charge figures match the broker's contract specification.")
     note("3. Every open position's opened_at matches the platform, in UTC.")
@@ -1341,9 +1411,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         symbol = resolve_symbol(mt5, args.symbol)
         cache = state_dir / OFFSET_CACHE_NAME
+        carry_log_path = state_dir / CARRY_LOG_NAME
 
         if args.probe:
-            return run_probe(mt5, symbol, cache, args.server_utc_offset, config)
+            return run_probe(mt5, symbol, state_dir, args.server_utc_offset, config)
 
         if args.size:
             _, _, _, _, terms, _ = read_everything(
@@ -1354,8 +1425,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.once:
-            report, _ = take_reading(mt5, symbol, cache, args.server_utc_offset, config)
+            # Three values, not two. The earlier unpack raised ValueError on
+            # every invocation, which is how a mode nothing exercises fails.
+            report, _, price = take_reading(
+                mt5, symbol, cache, args.server_utc_offset, config
+            )
             print(render(report))
+            written = append_carry_log(carry_log_path, report, price)
+            print(f"\ncarry log: {written} row(s) appended to {carry_log_path}")
             return severity_exit_code(report)
 
         return run_monitor(
