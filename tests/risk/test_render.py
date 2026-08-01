@@ -189,3 +189,27 @@ def test_the_exit_code_escalates_with_the_worst_severity() -> None:
 def test_the_rendered_report_is_plain_text_within_a_terminal_width() -> None:
     text = render(_report())
     assert all(len(line) <= 100 for line in text.splitlines())
+
+
+def test_the_measured_rows_carry_their_denominator_into_the_table() -> None:
+    # A ratio in a table without its denominator was read as a defect that had
+    # already been fixed. The label is the fix.
+    held = fixtures.position(
+        opened_at=fixtures.NOW - timedelta(hours=44.769), swap=-13.58
+    )
+    text = render(
+        build_report(
+            now=fixtures.NOW,
+            terminal=fixtures.terminal(),
+            account=fixtures.account(),
+            positions=(held,),
+            deals=(),
+            terms_by_symbol={"XAUUSD": fixtures.gold(swap_mode=2, swap_long=-67.9)},
+            config=RiskConfig(),
+        )
+    )
+    assert "measured/day" in text
+    assert "measured/night" in text
+    assert "points/lot/night crossed" in text
+    assert "points/lot/calendar day" in text
+    assert max(len(line) for line in text.splitlines()) <= 100

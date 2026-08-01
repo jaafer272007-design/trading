@@ -284,6 +284,9 @@ def _divergence_for(
         mode=mode,
         currency_per_point=per_point,
         notional_per_lot=notional,
+        measured_nightly_points=portfolio.per_lot_per_night_points.get(name, {}),
+        published_swap_long=terms.swap_long,
+        published_swap_short=terms.swap_short,
     )
 
 

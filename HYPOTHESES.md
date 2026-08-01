@@ -1158,6 +1158,30 @@ risk management" actually are**
 > within an arm; a 50/50 direction split in the random control. **No p-value is
 > recomputed** — that needs the per-block data and a run, and no run is being made.
 
+**2026-08-01 — the long leg of that correction is now measured; the short leg is not**
+
+> Appended, not edited. No re-run, no `N_claims` draw. **Nothing in the block above changes.**
+>
+> The 2026-07-29 correction was arithmetic under a stated reading of the published fields.
+> `[MEASURED]` H-005, 2026-08-01: the long rate of **67.9 points per lot per night is now a
+> measurement** — a live 0.10-lot long was charged 13.58 across two charging events. The
+> **27.0 credit on the short side is still only a published field**, and every blended rate
+> in the table above depends on it.
+>
+> **The correction is bounded across both readings of the unmeasured leg**, so the
+> conclusion does not wait on measuring it:
+>
+> | short leg | signal factor | random factor | signal penalised more by | effect becomes |
+> |---|---|---|---|---|
+> | credited 27.0 (published) | 1.786x | 1.461x | 0.000271 R | +0.060127 R (0.45%) |
+> | charged 27.0 (adverse) | 3.390x | 3.389x | 0.000158 R | +0.060240 R (0.26%) |
+>
+> Either way the correction is under half a percent of the effect and cannot touch
+> `p = 0.0204`. **The directional reading stays withdrawn on H-007's grounds**, which are
+> substantive and independent of any cost figure. The reading of this entry is unchanged in
+> every respect; what changed is that half of the correction's input is now measured rather
+> than read off a field.
+
 ### H-004 — LLM synthesis vs. deterministic combination (SC-1)
 
 - **Registered:** 2026-07-26 14:32 UTC
@@ -1456,6 +1480,68 @@ risk management" actually are**
 > **What this does not do.** It does not re-open this gate's conditions, it does not change
 > `SPREAD_FLOOR_POINTS`, and **it triggers no re-run.** The two cost-dependent results
 > carry their own dated notes: see H-003 and H-007. Nothing here is a claim about markets.
+
+**2026-08-01 — the magnitude is measured on the long side, and the structure is not**
+
+> Appended, not edited. Conditions (i)–(iii) unchanged, no run is re-run, **no `hypothesis_id`
+> and no `N_claims` draw — `N_claims` stays at 6.** A broker measurement, not an evaluation.
+>
+> `[MEASURED]` a live long of **0.10 lots** on FxPro `GOLD` was charged **13.58 USD across
+> two charging events** — 6.79 a night, which on this contract is **67.9 points per lot per
+> night**, equal to the published `swap_long` to the last digit.
+>
+> **Finding 3 is now a measurement, on the long side only.** The 2026-07-29 block read the
+> mode-2 figure as an effective deposit-currency charge and said plainly that this was
+> "evidence, and evidence is not a measurement." It is now measured. The **short side is
+> not**: the position was long, and the +27.0 credit remains a reading of a published field
+> that nothing has been charged against. Measuring it needs a short held across a rollover.
+>
+> **Finding 1 is narrowed, and the narrowing is against the finding.** The *literal*
+> base-currency reading is dead: 67.9 ounces a night per lot would be about **277,000 USD**
+> at the price it was measured at, four orders of magnitude from 6.79. The field is being
+> applied **at face value in the deposit currency, exactly as `SwapMode.POINTS` would apply
+> it**, whatever `swap_mode = 2` declares. So the declared mode does not describe the
+> charging rule on this symbol.
+>
+> That does **not** restore the registered model, and it does not settle the structure
+> either. A rate proportional to price, with a coefficient calibrated at the price on the
+> night it was read, produces exactly the same number. **One price cannot separate a
+> constant from a proportionality through that point.** `risk.carry_log` returns
+> `UNDETERMINED` on this window and names the two conditions that failed — two charging
+> events against a required five, and a monotone price path against a required two
+> reversals. The condition that **passed** is the resolution one, and that distinction
+> matters: the window failed on *shape*, not on the price being too flat.
+>
+> **The corrected divergence, on the basis that matches the registry's own unit.**
+>
+> | basis | broker | registered | ratio |
+> |---|---|---|---|
+> | per night, long | **67.9** points/lot | 20.0 points/lot | **3.395x** |
+> | per calendar week, long | **475.3** points/lot | 140.0 points/lot | **3.395x** |
+> | annualised at gold 4,042 | **6.13%** of notional | 1.81% of notional | 3.395x |
+>
+> **`3.395x` is the figure. Two other numbers are in circulation and both are wrong to
+> quote.** `3.64x` is the same measurement on a **per-calendar-day** denominator — 13.58
+> over 1.87 elapsed days rather than over 2 nights — and is correct arithmetic on a
+> denominator that is not the registry's. `2.60x` was reconstructed on the belief that the
+> tool had divided by a five-night registered week; it had not, and the reconstruction is
+> internally inconsistent, implying a nightly charge of 52.0 points against the 67.9 that
+> was measured. Under a five-night denominator the tool would have printed **5.10x**, so the
+> displayed figure is itself evidence that the 2026-07-29 rollover correction reached the
+> arithmetic. `tests/risk/test_swap.py` and `tests/risk/test_report.py` reconstruct all
+> three numbers so that this paragraph is a test rather than a claim.
+>
+> **What is still out of reach, restated because it is the most over-readable part.** A 2026
+> measurement is 2026 funding. The H-006 window opens in 2015 at near-zero dollar rates.
+> **Nothing here licenses a retro-fit of the registry's cost model**, and no one may use
+> 67.9 to compute what H-003 or H-007 "should have" charged over 2015–2026.
+>
+> One observation about the longer horizon, marked as reasoning and not as measurement: a
+> charge fixed in *points* implies an annualised rate that **falls as gold rises**. The same
+> 20 points is 3.04% of notional at gold 2,400 and 1.81% at 4,042. Over a window in which
+> gold roughly tripled, a fixed points rate would mean a financing desk letting its
+> effective rate fall by two thirds and never repricing. That is an argument that months of
+> readings would separate the two hypotheses far more easily than a week — not a result.
 
 ### H-006 — The evaluation window is a declared boundary, not a truncation
 
@@ -1961,6 +2047,38 @@ becomes an explicit term**
 > **Stated assumptions**: the mode-2 reading in H-005 finding 3; equal nights-held per
 > decision across directions within the signal arm. **No p-value is recomputed**; that
 > needs a run, and none is being made. **`REJECTED` stands. H-008 stays unrun.**
+
+**2026-08-01 — the factor that carries this correction is now measured, and a slip in it is corrected**
+
+> Appended, not edited. No re-run, no `N_claims` draw. **`REJECTED` stands. H-008 stays unrun.**
+>
+> **The measured input.** `[MEASURED]` H-005, 2026-08-01: a live 0.10-lot long was charged
+> 13.58 across two charging events — **67.9 points per lot per night**. Always-long is 100%
+> long, so the **3.395x** factor that does all the work in the table above is now a
+> measurement rather than a reading of a published field. The signal arm's blended 26.334
+> still depends on the **unmeasured** 27.0 short credit.
+>
+> **An arithmetic slip in the block above, corrected here rather than edited there.** That
+> block states the gap as `0.001737 R` and the corrected difference as `≈ +0.001596 R`. Its
+> own table gives `0.003256 − 0.000959 = 0.002297` against `0.001318 − 0.000738 = 0.000580`,
+> and **`0.002297 − 0.000580 = 0.001717`**, not `0.001737`. The corrected point estimate is
+> therefore **`≈ +0.001576 R`** and the correction is **2.34%** of the CI half-width rather
+> than 2.4%. The error is 1.2% of a quantity that was already 2.4% of a confidence interval;
+> it changes nothing and is recorded because an uncorrected number in a registry is a number
+> someone will quote.
+>
+> **The sign flip survives the unmeasured leg.** The short credit is the one input still
+> unmeasured, and the conclusion does not depend on it:
+>
+> | short leg | always-long penalised more by | corrected difference | share of CI half-width |
+> |---|---|---|---|
+> | credited 27.0 (published) | 0.001717 R | **+0.001576 R** | 2.34% |
+> | charged 27.0 (adverse) | 0.000533 R | **+0.000392 R** | 0.72% |
+>
+> **The point estimate flips sign under both**, and under both it remains a fraction of a
+> confidence interval that contains zero comfortably. The three reasons in the block above
+> are untouched: it is noise against its own interval, it is a few percent of the effect
+> H-007 attributed to long bias, and **H-012 tested for direction directly and found none.**
 
 ---
 

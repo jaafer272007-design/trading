@@ -346,10 +346,12 @@ costume of a rule.
 
 ---
 
-## 5. Instrument defects: eight, and the pattern held every time
+## 5. Instrument defects: nine, and the pattern held every time
 
-The count is **eight**. Seven were defects in code. **The eighth, added 2026-07-29, is a
+The count is **nine**. Seven were defects in code. **The eighth, added 2026-07-29, is a
 defect in a *claim about* code** — and it is the only one that reached a merged commit.
+**The ninth, added 2026-08-01, is neither**: correct code printing a correct number
+that could not be checked from what was printed. See §5.2.
 
 | # | defect | caught by |
 |---|---|---|
@@ -361,19 +363,22 @@ defect in a *claim about* code** — and it is the only one that reached a merge
 | 6 | K-1's **vacuous pass** at 35 and 56 parameters | the clean null measured beside the verdict |
 | 7 | **separability** costing 426,723 iterations against 314 at identical conditioning | an independent IRLS solve |
 | 8 | **`rollovers_crossed` "counts five rollovers a week"** — it counts seven | running the function on a known week |
+| 9 | **a `3.64x` divergence printed with no denominator** — a per-calendar-day figure read as a per-night one | reconstructing the number from the raw charge |
 
-**The pattern, unchanged across all eight:**
+**The pattern, unchanged across all nine:**
 
 - Every one was **fluent**. No warning, no `NaN`, no stack trace.
-- **Four of eight had a self-check that agreed with them**, because the self-check shared
+- **Four of nine had a self-check that agreed with them**, because the self-check shared
   the assumption. In #6 the self-check *was the gate*, returning PASS.
 - **None was caught by re-reading the code.** Each needed an external reference or an
   adversarial fixture: a published calendar, `zoneinfo`, a corrupted input, a probe grid, a
-  second solver — and, for #8, simply calling the function.
-- **Five of eight made the data look worse than it is**, not better. The failure mode is not
+  second solver — for #8, simply calling the function, and for #9, recomputing the printed
+  number from the charge it came from.
+- **Five of nine made the data look worse than it is**, not better. The failure mode is not
   optimism. It is confidence.
-- **Two of eight were inside machinery written to prevent a defect** — the probe grid and
-  the convergence rule. Instrument count is not monotone in instrument care.
+- **Three of nine were inside machinery written to prevent a defect** — the probe grid, the
+  convergence rule, and the divergence report itself. Instrument count is not monotone in
+  instrument care.
 
 ### 5.1 Why #8 is a different kind, and the worse kind
 
@@ -415,6 +420,56 @@ internally consistent, and both were wrong.
 measurement had completed. **Loud failures are not in this table.** The table is a list of
 things that computed successfully and were wrong, which is why `EVALUATION.md` §14 asks for
 an external anchor rather than for more error handling.
+
+---
+
+### 5.2 Why #9 is neither code nor claim, and what it cost
+
+Added 2026-08-01. `SwapDivergence` printed **`3.64x`** for the measured long side against
+the registered substitute. The arithmetic was right, the code was right, and the number was
+right. **It was still a defect**, because the row did not say what it had divided by.
+
+`3.64x` is `13.58 charged / 1.87 elapsed calendar days`, expressed against a registered
+constant of 20 points **per night**. On the per-night denominator the same charge reads
+**`3.395x`**. Both are correct; only one shares the registry's unit; the printed row named
+neither.
+
+**What it cost.** The number was read as evidence that defect #8 was still live in the
+tool's own output — that the retracted five-rollover denominator had survived into the alert
+string — and a corrected figure of `2.60x` was derived from that premise. Neither was so.
+The correction had reached the string, the arithmetic and the constants. And the reading is
+self-refuting once the arithmetic is done: `2.60 x 140 = 364` points a week is **52.0 points
+a night**, against the **67.9** that had just been measured. Under the five-night
+denominator the tool would have printed **`5.10x`**, so `3.64x` was itself evidence the
+correction had landed.
+
+**Why this belongs in the table.** #1-7 computed the wrong number. #8 said the wrong thing
+about a right number. #9 said nothing at all about a right number, and the silence was
+enough for a careful reader — the person who had written the correction eight days earlier —
+to reconstruct a wrong cause with confidence. **An output that cannot be audited from its own
+face is an instrument defect even when every digit in it is correct.**
+
+**Three things were wrong with the presentation and all three are fixed.**
+
+1. The source column read `measured`. It now reads `measured/day` or `measured/night`, and
+   both rows are printed whenever both denominators exist.
+2. Only one basis was computed. `PositionCarry` now carries `rate_measured_per_night`
+   alongside `rate_measured_per_day`, and the comparison runs on both.
+3. Nothing said which to quote. A note now fires whenever the two ratios differ by more
+   than 1% — deliberately *below* the measured route's own 10% tolerance, because the
+   reading that motivated it differed by 7.2% and a threshold set at the tolerance would
+   have stayed silent on exactly the case it exists for.
+
+**The lesson, and it is the third step in the same direction.** §1.2: a rule that is not a
+test is a rule you are relying on luck to follow. §5.1: an assertion about someone else's
+code, with no test behind it, is an assertion you are relying on luck for. Now: **a number
+whose units are not printed beside it is a number you are relying on luck to have read
+correctly** — and the luck runs out fastest for the reader who knows the most, because they
+have the most alternative explanations available to reach for.
+
+`tests/risk/test_swap.py` and `tests/risk/test_report.py` reconstruct `3.64x`, `3.395x` and
+the counterfactual `5.10x` from the raw charge, so all three numbers are pinned by tests
+rather than by this section.
 
 ---
 
@@ -709,3 +764,28 @@ a plausible gold financing rate — which is evidence, not a measurement.
 **One week of a real position settles it.** Until then the declared route stays refused and
 `SwapDivergence` reports `UNAVAILABLE` on the declared side while still flagging
 `bears_on_the_registry`, because the structure is enough on its own.
+
+### 11.6 Two nights of it, 2026-08-01 — what came back and what did not
+
+`[MEASURED]` a live 0.10-lot long was charged **13.58 across two charging events**: 6.79 a
+night, **67.9 points per lot per night**, equal to the published `swap_long` to the digit.
+
+**Settled.** The deposit-currency reading in §11.5 is now a measurement **on the long side**,
+and the literal base-currency reading is dead — 67.9 ounces would have been about 277,000 at
+the price it was read at. The divergence against the registered substitute is **3.395x per
+night**, and that factor is what carries the whole H-007 correction, because always-long is
+100% long.
+
+**Not settled, and the distinction is the point.** The *structure* did not come back. A rate
+proportional to price with its coefficient calibrated at the price on the night it was read
+produces exactly the same charge; one price cannot separate a constant from a
+proportionality through that point. The pre-committed instrument returned `UNDETERMINED`
+and named the two conditions that failed — two charging events against five, and a monotone
+price path against two reversals. **The condition that passed is the resolution one**: the
+price moved far enough for a response to have been visible, and the window still could not
+call it. That is a failure of shape, not of range, and no threshold was moved to reach it.
+
+**Also not settled: the short side.** The +27.0 credit is still a published field with
+nothing charged against it. Both cost-dependent corrections were re-run across both readings
+of it and neither conclusion depends on which is true — H-007's sign flip survives even the
+adverse reading. See `HYPOTHESES.md` H-003 and H-007, 2026-08-01.

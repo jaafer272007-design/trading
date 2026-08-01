@@ -30,13 +30,41 @@ the two** and says so. That is the conservative direction, and in a layer whose
 entire purpose is to stop an account being surprised by a cost, the
 conservative direction is the correct default rather than a bias.
 
-Why the rate is per calendar day rather than per charging event
---------------------------------------------------------------
+Why the *projection* rate is per calendar day rather than per charging event
+---------------------------------------------------------------------------
 
 See :mod:`risk.clock`. A broker charges five times a week, one of them tripled,
 and nothing at the weekend. A per-calendar-day rate absorbs that schedule, plus
 holidays and any rate change during the hold, without modelling any of them --
 and it needs no knowledge of which weekday carries the triple charge.
+
+Two measured bases, and why both are reported
+---------------------------------------------
+
+The projection wants a rate per calendar day. The *comparison against the
+registry* wants a rate per night, because ``backtest.costs`` is quoted per night
+and ``rollovers_crossed`` counts nights. Over a whole week the two are the same
+number -- seven nights across seven days -- and over a **sub-week hold they are
+not**, so both are computed and both are reported:
+
+``rate_measured_per_day``
+    ``carry_paid / days_open``. Exact over any whole number of weeks. On a
+    shorter hold it is biased by ``nights / days``: a position opened on a
+    Tuesday evening and read on a Thursday morning has crossed two midnights in
+    1.87 days, and this figure comes out about 7% high.
+
+``rate_measured_per_night``
+    ``carry_paid / nights_held``. Exact whenever every midnight crossed carried
+    exactly one ordinary charge -- a mid-week hold with no weekend and no
+    triple-swap day inside it. Over a hold containing a weekend it is biased the
+    other way, because two of the midnights it counts are charged nothing.
+
+**Neither is unbiased for an arbitrary sub-week hold, and their disagreement is
+the size of the schedule effect.** That is why the disagreement is reported
+rather than resolved: when the two agree, the schedule did not bite and either
+figure is the rate. `[MEASURED]` this distinction is not hypothetical -- it is
+what made a 2026-08-01 reading of a 44.8-hour hold display a ratio of 3.64x
+where the per-night ratio was 3.40x. See :mod:`risk.swap`.
 
 When the rate is itself price-dependent
 ---------------------------------------
@@ -55,6 +83,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
+from typing import Final
 
 from risk.clock import (
     SWAP_UNITS_PER_CALENDAR_DAY,
@@ -70,6 +99,15 @@ from risk.state import (
     value_per_point_per_lot,
 )
 from risk.swap import DeclaredSwap, SwapMode
+
+#: How far apart the two measured rates may be before the disagreement is
+#: named. Expressed as a **fraction of the rate** rather than as a difference
+#: in days, because the rate is the thing a reader quotes: a 3.2-hour gap
+#: between 1.87 days and 2 midnights is a small number of hours and a 7.2%
+#: difference in the figure it produces. One percent, so the note fires on the
+#: reading that motivated it rather than only on extreme ones. A reporting
+#: threshold; it limits nothing.
+BASIS_AGREEMENT_FRACTION: Final = 0.01
 
 
 class CarrySource(StrEnum):
@@ -137,7 +175,13 @@ class PositionCarry:
         breakeven_price: The price that move reaches.
         breakeven_pct: That move as a percentage of the open price.
         rate_declared_per_day: Forward rate from the published figure.
-        rate_measured_per_day: Forward rate from what was actually charged.
+        rate_measured_per_day: Forward rate from what was actually charged,
+            divided by calendar days.
+        rate_measured_per_night: The same charge divided by **midnights
+            crossed** instead. ``None`` when the server clock is unavailable or
+            no midnight has been crossed. Not used for any projection; it exists
+            because the registered constant is per night and comparing a
+            per-day figure against it mismatches units on a sub-week hold.
         rate_per_day: The rate the projections use.
         rate_source: Which route it came from.
         projections: Financing at each configured horizon.
@@ -164,6 +208,7 @@ class PositionCarry:
     breakeven_pct: float | None
     rate_declared_per_day: float | None
     rate_measured_per_day: float | None
+    rate_measured_per_night: float | None
     rate_per_day: float | None
     rate_source: CarrySource
     projections: tuple[CarryProjection, ...]
@@ -312,6 +357,13 @@ def position_carry(
             )
         )
 
+    # The per-night basis, for the registry comparison only. Gated on exactly
+    # the same conditions as the per-day one so that the two appear and
+    # disappear together and a reader is never shown one without the other.
+    rate_measured_nightly: float | None = None
+    if rate_measured is not None and nights is not None and nights > 0:
+        rate_measured_nightly = paid / nights
+
     rate, source = _choose_rate(rate_declared, rate_measured, notes)
     if rate is None:
         refusals.append(
@@ -344,12 +396,31 @@ def position_carry(
             swap_mode = None
         if swap_mode is not None and swap_mode.is_price_dependent:
             notes.append(
-                f"swap_mode is {swap_mode.name}, so the financing rate is "
-                f"itself a function of price -- the projections below hold "
-                f"price constant for the rate as well as for equity, and a "
-                f"rising market raises the dollar carry on a long above every "
-                f"figure shown"
+                f"swap_mode is {swap_mode.name}, which declares the financing "
+                f"rate to be itself a function of price -- if it holds, the "
+                f"projections below hold price constant for the rate as well "
+                f"as for equity, and a rising market raises the dollar carry "
+                f"on a long above every figure shown. Whether it holds is "
+                f"UNDETERMINED as of 2026-08-01; the projection is the "
+                f"conservative reading either way"
             )
+
+    if (
+        rate_measured is not None
+        and rate_measured_nightly is not None
+        and nights is not None
+        and rate_measured_nightly != 0
+        and abs(rate_measured / rate_measured_nightly - 1.0) > BASIS_AGREEMENT_FRACTION
+    ):
+        notes.append(
+            f"the two measured bases disagree: {rate_measured:,.2f} a calendar "
+            f"day over {days:.2f} days against {rate_measured_nightly:,.2f} a "
+            f"night over {nights} midnights crossed, a factor of "
+            f"{rate_measured / rate_measured_nightly:.3f}. That is the "
+            f"schedule, not a rate change -- the hold is not a whole number of "
+            f"weeks. The per-night figure is the one to compare against the "
+            f"registered constant, which is quoted per night"
+        )
 
     if paid > 0 and position.profit != 0:
         notes.append(
@@ -379,6 +450,7 @@ def position_carry(
         breakeven_pct=be_pct,
         rate_declared_per_day=rate_declared,
         rate_measured_per_day=rate_measured,
+        rate_measured_per_night=rate_measured_nightly,
         rate_per_day=rate,
         rate_source=source,
         projections=projections,
@@ -477,6 +549,10 @@ class PortfolioCarry:
             terms are a property of the instrument, and pooling two symbols'
             financing into one comparison against a gold constant would be
             comparing the constant against something it was never about.
+        per_lot_per_night_points: The same charge on the **per-midnight**
+            basis. Same keys, same units, different denominator; see the module
+            docstring for which is exact when. Empty for any position whose
+            server clock could not be located.
     """
 
     paid_total: float
@@ -485,6 +561,7 @@ class PortfolioCarry:
     days_until_carry_consumes_equity: float | None
     date_carry_consumes_equity: datetime | None
     per_lot_per_day_points: dict[str, dict[str, float]]
+    per_lot_per_night_points: dict[str, dict[str, float]]
 
 
 def portfolio_carry(
@@ -523,7 +600,8 @@ def portfolio_carry(
         days_to_zero = equity / rate
         date_to_zero = now + timedelta(days=days_to_zero)
 
-    samples_by_key: dict[tuple[str, str], list[tuple[float, float]]] = {}
+    daily_samples: dict[tuple[str, str], list[tuple[float, float]]] = {}
+    nightly_samples: dict[tuple[str, str], list[tuple[float, float]]] = {}
     by_ticket = {p.ticket: p for p in positions}
     for c in carries:
         if c.rate_measured_per_day is None:
@@ -535,17 +613,14 @@ def portfolio_carry(
         per_point = value_per_point_per_lot(terms)
         if per_point is None or per_point <= 0:
             continue
-        points = c.rate_measured_per_day / (per_point * c.volume)
-        samples_by_key.setdefault((c.symbol, c.direction.value), []).append(
-            (c.volume, points)
+        key = (c.symbol, c.direction.value)
+        daily_samples.setdefault(key, []).append(
+            (c.volume, c.rate_measured_per_day / (per_point * c.volume))
         )
-
-    per_lot_points: dict[str, dict[str, float]] = {}
-    for (symbol, side), samples in samples_by_key.items():
-        weight = sum(v for v, _ in samples)
-        if weight > 0:
-            mean = sum(v * p for v, p in samples) / weight
-            per_lot_points.setdefault(symbol, {})[side] = mean
+        if c.rate_measured_per_night is not None:
+            nightly_samples.setdefault(key, []).append(
+                (c.volume, c.rate_measured_per_night / (per_point * c.volume))
+            )
 
     return PortfolioCarry(
         paid_total=paid_total,
@@ -553,5 +628,25 @@ def portfolio_carry(
         rate_is_partial=partial,
         days_until_carry_consumes_equity=days_to_zero,
         date_carry_consumes_equity=date_to_zero,
-        per_lot_per_day_points=per_lot_points,
+        per_lot_per_day_points=_volume_weighted(daily_samples),
+        per_lot_per_night_points=_volume_weighted(nightly_samples),
     )
+
+
+def _volume_weighted(
+    samples_by_key: dict[tuple[str, str], list[tuple[float, float]]],
+) -> dict[str, dict[str, float]]:
+    """Collapse ``(volume, points)`` samples into a volume-weighted mean.
+
+    Args:
+        samples_by_key: Samples keyed by ``(symbol, side)``.
+
+    Returns:
+        ``{symbol: {side: points}}``, omitting any key whose weight is zero.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for (symbol, side), samples in samples_by_key.items():
+        weight = sum(v for v, _ in samples)
+        if weight > 0:
+            out.setdefault(symbol, {})[side] = sum(v * p for v, p in samples) / weight
+    return out

@@ -109,6 +109,20 @@ def report(result: CarryLogAnalysis) -> None:
     row("separation needed", f"{SEPARATION_FACTOR:.0f}x")
 
     print()
+    print("  The published field - reported, never acted on")
+    f = result.field
+    row("readings carrying swap_long", f"{f.readings:,}")
+    row(
+        "distinct values",
+        "none recorded" if f.changed is None else ", ".join(str(v) for v in f.distinct),
+    )
+    row(
+        "did the broker re-quote",
+        "unknown - not logged" if f.changed is None else ("YES" if f.changed else "no"),
+    )
+    row("watched across every charge", "yes" if f.spans_the_charges else "no")
+
+    print()
     print("  Settled regardless of power")
     row("charges swaps at all", "yes" if result.charges_swaps else "NO")
     if result.charge_per_lot_per_night is not None:

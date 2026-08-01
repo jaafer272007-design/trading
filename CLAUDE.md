@@ -113,11 +113,15 @@ Hard Rules 2, 6 and 10, and everything in Style, apply here exactly as everywher
 
 1. **The structure is wrong.** A base-currency rate makes the account-currency charge proportional to the gold price. The registered model has no term that varies with price, so **no value of the constant would have been right.** The layer's *refusal* to convert is what surfaced this — a default would have buried it inside a plausible number.
 2. **The sign is asymmetric.** Long pays, short is credited. `swap_points` charges both directions on the stated ground that a credit is an optimistic assumption about an unobserved rate. It is now observed.
-3. **The magnitude is roughly 3.4x long**, under a reading the field alone cannot confirm. A week of a real position settles it.
+3. **The magnitude is 3.395x long.** `[MEASURED]` 2026-08-01: a live 0.10-lot long was charged **13.58 across two charging events** — 67.9 points per lot per night, equal to the published field to the digit. This was a reading the field alone could not confirm; it is now a measurement, **on the long side only**. The +27.0 short credit is still unmeasured.
 
 `SwapDivergence` is a **first-class field of the risk report** rather than a diagnostic, and it is reported on three bases. The one to trust for a price-dependent mode is **annualised percent of notional**, because it is the only basis invariant to the price.
 
 `bears_on_the_registry` is true whenever the mode is price-dependent, **whether or not the magnitude comes out high** — a substitute that is wrong in structure bears on the registry regardless.
+
+**Every measured ratio names its denominator, and this is not decoration.** The registered constant is per *night*; the projection's rate is per calendar *day*; over a whole week they are one number and below one week they are not. A `3.64x` printed without its denominator was read as a per-night figure, and the misreading survived into a derived correction before the arithmetic caught it. Instrument defect #9, `RETROSPECTIVE-2.md` §5.2. `measured/day` and `measured/night` are both computed, both printed, and their disagreement is reported when it exceeds 1%.
+
+**What the 2026-08-01 reading did not settle: the structure.** The charge matching the published field at one price is equally consistent with a constant and with a proportionality calibrated at that price. `risk.carry_log` returned `UNDETERMINED` — two charging events against a required five, a monotone path against a required two reversals — and **no threshold in it was moved to reach that.** The condition that *passed* was the resolution one, so the window failed on shape rather than on the price being flat. The log now also records the published field itself on every reading, because a fixed rate the broker re-quotes and a price-dependent rate are otherwise indistinguishable; that channel **reports and never votes**, since a discriminator chosen after seeing data is what the module exists to prevent.
 
 ### A correction, kept because the pattern is the point
 

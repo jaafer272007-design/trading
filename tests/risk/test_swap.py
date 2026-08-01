@@ -5,8 +5,22 @@ Two groups of tests matter most here.
 **The FxPro measurement**, 2026-07-29: ``swap_mode = 2``, long -67.9, short
 +27.0. The refusal is the finding, and
 ``test_a_base_currency_swap_is_refused_and_the_refusal_names_the_structure``
-pins it -- a base-currency rate makes the account-currency charge a function of
-the gold price, which no fixed points constant can represent.
+pins it -- the mode *declares* a base-currency rate, which would make the
+account-currency charge a function of the gold price and which no fixed points
+constant can represent.
+
+**The live reading**, 2026-08-01: 13.58 charged on 0.10 lots across two
+charging events, which is 67.9 points per lot per night -- the published field
+at face value in the deposit currency. That measures the magnitude and leaves
+the structure ``UNDETERMINED``, so the refusal must say ``DECLARES`` rather
+than asserting the mechanism, and
+``test_the_price_dependent_note_says_declared_rather_than_asserting_it``
+holds it to that in both directions.
+
+**The denominator.** ``test_the_2026_08_01_reading_reconstructs_on_both_bases``
+rebuilds the ``3.64x`` that was printed, the ``3.395x`` that shares the
+registry's per-night unit, and the ``5.10x`` a five-night denominator would
+have produced -- so instrument defect #9 is a fixture rather than a paragraph.
 
 **The correction.** An earlier version of this file asserted that a broker
 charging 15 points a night would already exceed the registry, because the
@@ -29,6 +43,9 @@ from risk.swap import (
     REGISTERED_LONG_POINTS,
     REGISTERED_SHORT_POINTS,
     REGISTERED_WEEKLY_LONG_POINTS,
+    SOURCE_DECLARED,
+    SOURCE_MEASURED_DAY,
+    SOURCE_MEASURED_NIGHT,
     DeclaredSwap,
     SwapMode,
     SwapVerdict,
@@ -164,7 +181,9 @@ def test_the_two_bases_agree_because_the_night_counts_agree() -> None:
 
     finding = swap_divergence("XAUUSD", declared, {}, 0.10)
     weekly_long = next(
-        c for c in finding.comparisons if c.side == "long" and c.source == "declared"
+        c
+        for c in finding.comparisons
+        if c.side == "long" and c.source == SOURCE_DECLARED
     )
     assert weekly_long.broker_points == pytest.approx(105.0)
     assert weekly_long.registered_points == pytest.approx(140.0)
@@ -191,12 +210,14 @@ def test_the_declared_route_is_compared_exactly_with_no_tolerance() -> None:
 def test_the_measured_route_gets_the_configured_tolerance() -> None:
     # Registered weekly long is 140 points; 21 a day is 147 a week, 5% over.
     inside = swap_divergence("XAUUSD", _declared(swap_long=-1.0), {"long": 21.0}, 0.10)
-    measured = next(c for c in inside.comparisons if c.source == "measured")
+    measured = next(c for c in inside.comparisons if c.source == SOURCE_MEASURED_DAY)
     assert measured.broker_points == pytest.approx(147.0)
     assert not measured.exceeds
 
     outside = swap_divergence("XAUUSD", _declared(swap_long=-1.0), {"long": 21.0}, 0.01)
-    assert any(c.exceeds for c in outside.comparisons if c.source == "measured")
+    assert any(
+        c.exceeds for c in outside.comparisons if c.source == SOURCE_MEASURED_DAY
+    )
 
 
 def test_a_short_credit_is_reported_rather_than_netted_away() -> None:
@@ -240,8 +261,13 @@ def test_a_base_currency_swap_is_refused_and_the_refusal_names_the_structure() -
     # Not merely "cannot convert" -- the reason has to say what the structure
     # is, because the structure is the finding.
     assert "BASE currency" in result.reason
-    assert "proportional to the gold price" in result.reason
+    assert "proportional to the price" in result.reason
     assert "-67.9" in result.reason
+    # And since 2026-08-01 it must not assert the structure as fact: the charge
+    # came back at face value in the deposit currency, which the declared mode
+    # does not predict. The refusal is stronger for it, not weaker.
+    assert "DECLARES" in result.reason
+    assert "FACE VALUE" in result.reason
 
 
 def test_a_price_dependent_mode_bears_on_the_registry_on_structure_alone() -> None:
@@ -319,3 +345,125 @@ def test_without_a_price_the_annualised_basis_is_omitted_not_guessed() -> None:
     finding = swap_divergence("XAUUSD", _declared(), {}, 0.10)
     assert all(c.registered_annual_pct is None for c in finding.comparisons)
     assert all(c.broker_annual_pct is None for c in finding.comparisons)
+
+
+# --------------------------------------------------------------------------
+# The two measured denominators, and the reading that made them matter
+# --------------------------------------------------------------------------
+
+
+def test_the_measured_comparisons_name_their_denominator() -> None:
+    # A ratio without its denominator cannot be checked by the person reading
+    # it, and one was read as evidence of a defect that had already been fixed.
+    finding = swap_divergence(
+        "XAUUSD",
+        _declared(),
+        {"long": 72.789},
+        0.10,
+        measured_nightly_points={"long": 67.9},
+    )
+    sources = {c.source for c in finding.comparisons}
+    assert SOURCE_MEASURED_DAY in sources
+    assert SOURCE_MEASURED_NIGHT in sources
+    assert "measured" not in sources
+
+
+def test_the_2026_08_01_reading_reconstructs_on_both_bases() -> None:
+    # `[MEASURED]` 13.58 charged on 0.10 lots across two charging events, read
+    # 44.769 hours after the open. 13.58 / 1.86538 days is 72.800 points per
+    # lot per calendar day; 13.58 / 2 nights is 67.900 per night. The tool
+    # displayed 3.64x. That is the calendar-day basis and nothing else -- under
+    # the retracted five-night denominator it would have printed 5.10x, so the
+    # figure is itself proof the correction reached the arithmetic.
+    finding = swap_divergence(
+        "XAUUSD",
+        _declared(),
+        {"long": 13.58 / (44.769 / 24.0) / 0.10},
+        0.10,
+        measured_nightly_points={"long": 13.58 / 2.0 / 0.10},
+    )
+    by_day = next(c for c in finding.comparisons if c.source == SOURCE_MEASURED_DAY)
+    by_night = next(c for c in finding.comparisons if c.source == SOURCE_MEASURED_NIGHT)
+
+    assert by_day.ratio is not None
+    assert by_night.ratio is not None
+    assert by_day.ratio == pytest.approx(3.64, abs=5e-3)
+    assert by_night.ratio == pytest.approx(3.395, abs=5e-4)
+    assert by_night.ratio == pytest.approx(67.9 / REGISTERED_LONG_POINTS)
+    # The 7.2% gap is days-versus-nights and nothing else.
+    assert by_day.ratio / by_night.ratio == pytest.approx(
+        2.0 / (44.769 / 24.0), rel=1e-9
+    )
+    # What a five-night denominator would have printed, which is not 3.64.
+    assert by_day.broker_points / (5.0 * REGISTERED_LONG_POINTS) == pytest.approx(
+        5.096, abs=5e-3
+    )
+
+
+def test_disagreeing_bases_say_which_figure_to_quote() -> None:
+    finding = swap_divergence(
+        "XAUUSD",
+        _declared(),
+        {"long": 72.789},
+        0.10,
+        measured_nightly_points={"long": 67.9},
+    )
+    note = next(
+        n for n in finding.notes if "per calendar day" in n and "per night" in n
+    )
+    assert "3.64x per calendar day" in note
+    assert "3.40x per night" in note
+    assert "figure to quote" in note
+
+
+def test_agreeing_bases_raise_no_note_about_the_denominator() -> None:
+    # A whole-week hold: days and nights coincide and there is nothing to say.
+    finding = swap_divergence(
+        "XAUUSD",
+        _declared(),
+        {"long": 67.9},
+        0.10,
+        measured_nightly_points={"long": 67.9},
+    )
+    assert not any("figure to quote" in n for n in finding.notes)
+
+
+def test_a_missing_nightly_basis_leaves_the_daily_one_alone() -> None:
+    finding = swap_divergence("XAUUSD", _declared(), {"long": 72.789}, 0.10)
+    assert [c.source for c in finding.comparisons if "measured" in c.source] == [
+        SOURCE_MEASURED_DAY
+    ]
+    assert finding.measured_nightly_points == {}
+
+
+def test_the_published_field_survives_a_refusal_to_interpret_it() -> None:
+    # The refusal names the units it will not guess at. Losing the number as
+    # well would make the one series that separates a re-quoted fixed rate from
+    # a price-dependent one unrecoverable.
+    terms = fixtures.gold(swap_mode=2, swap_long=-67.9, swap_short=27.0)
+    finding = swap_divergence(
+        "XAUUSD",
+        declared_swap(terms, "USD"),
+        {},
+        0.10,
+        mode=SwapMode(terms.swap_mode),
+        published_swap_long=terms.swap_long,
+        published_swap_short=terms.swap_short,
+    )
+    assert finding.declared_long_points is None
+    assert finding.published_swap_long == pytest.approx(-67.9)
+    assert finding.published_swap_short == pytest.approx(27.0)
+
+
+def test_the_price_dependent_note_says_declared_rather_than_asserting_it() -> None:
+    # The mode is a declaration. Whether the charge obeys it is UNDETERMINED as
+    # of 2026-08-01, and a note that states it as fact would be the report
+    # asserting what its own instrument refused to conclude.
+    refusal = declared_swap(fixtures.gold(**FXPRO_GOLD), "USD")
+    finding = swap_divergence("GOLD", refusal, {}, 0.10, mode=SwapMode.CURRENCY_SYMBOL)
+    note = next(n for n in finding.notes if "FUNCTION OF PRICE" in n)
+    assert "DECLARES" in note
+    assert "UNDETERMINED" in note
+    # And the other direction is closed too: an untested structure does not
+    # vindicate the registered substitute.
+    assert "not vindicated" in note

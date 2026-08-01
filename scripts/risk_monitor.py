@@ -740,11 +740,19 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> Non
     The heartbeat holds only the latest reading, so without this the increments
     are unrecoverable and the measurement would have to be transcribed by hand.
 
+    **The published field is logged alongside the charge**, unconverted. A rate
+    that is proportional to price and a fixed rate the broker *re-quotes* as the
+    price moves produce the same increments, and the only thing that tells them
+    apart is whether ``swap_long`` itself moved. Rows written before 2026-08-01
+    do not carry it; :mod:`risk.carry_log` treats it as optional for exactly
+    that reason and says so rather than assuming it was stable.
+
     Args:
         path: File to append to.
         report: The reading just taken.
         price: Current price for the configured symbol, when known.
     """
+    published = {d.symbol: d for d in report.swap}
     if not report.carries:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -765,6 +773,20 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> Non
                         "carry_paid": c.carry_paid,
                         "floating_pnl": c.floating_pnl,
                         "price": price,
+                        # Raw, unconverted, whatever swap_mode says the units
+                        # are. A change in this field over the week is what
+                        # separates a re-quoted fixed rate from a price-
+                        # dependent one.
+                        "published_swap_long": (
+                            published[c.symbol].published_swap_long
+                            if c.symbol in published
+                            else None
+                        ),
+                        "published_swap_short": (
+                            published[c.symbol].published_swap_short
+                            if c.symbol in published
+                            else None
+                        ),
                         # Recorded so the analysis can recover the SERVER
                         # weekday, which is what identifies the triple-swap
                         # day. Without it the multiplier is still inferable but

@@ -27,6 +27,28 @@ Two hypotheses, both consistent with a single reading:
     also produces "the charge went up", which is why a level comparison cannot
     separate the two and a **shape** comparison can.
 
+Watching the published field, which is a direct channel on the step
+--------------------------------------------------------------------
+
+Added 2026-08-01. The ``FIXED_RATE`` hypothesis above always included "may step
+if the broker revises its rate", and until now that revision could only be
+*inferred* from the increments. The log now records ``swap_long`` itself on
+every reading, so a revision is **observed** instead:
+
+- the field never moves and the charge never moves — nothing stepped, and a
+  flat charge across a moving price is what it looks like;
+- the field moves and the charge follows it — the broker re-quoted, which is
+  ``FIXED_RATE`` with a step and is *not* price-dependence however well the
+  step happens to track the price;
+- the field never moves and the charge does — the charge is not a face-value
+  application of the field, which is what ``PRICE_DEPENDENT`` predicts.
+
+**No threshold below changes and no verdict rule reads this.** It is a fact
+block reported alongside the verdict, because a new discriminator chosen after
+seeing data is exactly what this module exists to prevent. Rows written before
+2026-08-01 carry no field value, and the analysis says so rather than reading
+their absence as stability.
+
 Why the shape separates them and the level does not
 ---------------------------------------------------
 
@@ -164,6 +186,9 @@ class CarryRow:
         price: Symbol price at the reading, or ``None``.
         volume: Lots.
         server_offset_hours: Server clock offset, for the server weekday.
+        published_swap_long: ``symbol_info().swap_long`` as read at that
+            moment, raw and unconverted. ``None`` for rows written before the
+            field was logged, which is not the same as "it did not move".
     """
 
     at: datetime
@@ -172,6 +197,7 @@ class CarryRow:
     price: float | None
     volume: float
     server_offset_hours: float | None
+    published_swap_long: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +247,30 @@ class PowerAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class FieldStability:
+    """Whether the broker's published rate moved while it was being watched.
+
+    Facts only. **Nothing in :func:`analyse` reads this to reach a verdict** —
+    see the module docstring on why a discriminator added after the data exists
+    is reported rather than acted on.
+
+    Attributes:
+        readings: Rows that carried a field value.
+        distinct: The distinct values seen, in first-seen order.
+        changed: Whether more than one value was seen. ``None`` when no row
+            carried the field, which is not evidence of stability.
+        spans_the_charges: Whether at least one field reading exists on each
+            side of every charging event, so that a revision between two
+            charges would have been visible.
+    """
+
+    readings: int
+    distinct: tuple[float, ...]
+    changed: bool | None
+    spans_the_charges: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CarryLogAnalysis:
     """Everything a week of rows supports.
 
@@ -234,6 +284,7 @@ class CarryLogAnalysis:
         charge_per_lot_per_night: The magnitude — settled with or without power.
         triple_swap_weekday: Inferred, ``0`` = Monday, or ``None``.
         charges_swaps: False when every increment was zero.
+        field: Whether the published rate moved. Reported, never acted on.
         notes: What to read, in the order it matters.
     """
 
@@ -246,6 +297,7 @@ class CarryLogAnalysis:
     charge_per_lot_per_night: float | None
     triple_swap_weekday: int | None
     charges_swaps: bool
+    field: FieldStability
     notes: tuple[str, ...]
 
 
@@ -282,6 +334,11 @@ def parse_rows(lines: Iterable[str]) -> tuple[CarryRow, ...]:
                     server_offset_hours=(
                         float(payload["server_offset_hours"])
                         if payload.get("server_offset_hours") is not None
+                        else None
+                    ),
+                    published_swap_long=(
+                        float(payload["published_swap_long"])
+                        if payload.get("published_swap_long") is not None
                         else None
                     ),
                 )
@@ -368,6 +425,41 @@ def nightly_charges(rows: Sequence[CarryRow]) -> tuple[NightlyCharge, ...]:
     return tuple(out)
 
 
+def _field_stability(
+    rows: Sequence[CarryRow], nights: Sequence[NightlyCharge]
+) -> FieldStability:
+    """Summarise what the published rate did while it was watched.
+
+    Args:
+        rows: Every reading for the ticket.
+        nights: The reconstructed charging events.
+
+    Returns:
+        The fact block. ``changed`` is ``None`` when no row carried the field.
+    """
+    seen: list[float] = []
+    stamps: list[datetime] = []
+    for row in sorted(rows, key=lambda r: r.at):
+        if row.published_swap_long is None:
+            continue
+        stamps.append(row.at)
+        if row.published_swap_long not in seen:
+            seen.append(row.published_swap_long)
+    if not stamps:
+        return FieldStability(0, (), None, spans_the_charges=False)
+    spans = all(
+        any(s < n.observed_at for s in stamps)
+        and any(s >= n.observed_at for s in stamps)
+        for n in nights
+    )
+    return FieldStability(
+        readings=len(stamps),
+        distinct=tuple(seen),
+        changed=len(seen) > 1,
+        spans_the_charges=bool(nights) and spans,
+    )
+
+
 def _assess_power(nights: Sequence[NightlyCharge]) -> PowerAssessment:
     """Decide whether the week could have detected a price response.
 
@@ -452,6 +544,7 @@ def analyse(rows: Sequence[CarryRow]) -> CarryLogAnalysis:
 
     nights = nightly_charges(rows)
     power = _assess_power(nights)
+    field = _field_stability(rows, nights)
     notes: list[str] = []
 
     charges = bool(nights) and any(n.increment != 0.0 for n in nights)
@@ -529,6 +622,33 @@ def analyse(rows: Sequence[CarryRow]) -> CarryLogAnalysis:
             f"other, so the week does not separate the two explanations"
         )
 
+    if field.changed is None:
+        notes.append(
+            "no reading carried the published swap_long, so whether the broker "
+            "re-quoted its rate during this window is unknown. That is not the "
+            "same as the rate having held, and a FIXED_RATE reading cannot be "
+            "strengthened by it"
+        )
+    elif field.changed:
+        notes.append(
+            f"the published swap_long took {len(field.distinct)} distinct "
+            f"values while this position was watched: {field.distinct}. A "
+            f"charge that follows a re-quoted field is FIXED_RATE with a step, "
+            f"not price-dependence, however closely the step tracks the price"
+        )
+    else:
+        notes.append(
+            f"the published swap_long held at {field.distinct[0]} across "
+            f"{field.readings:,} readings"
+            + (
+                ", spanning every charging event, so a revision between two "
+                "charges would have been seen"
+                if field.spans_the_charges
+                else ", but not across every charging event, so a revision "
+                "could have fallen in a gap"
+            )
+        )
+
     return CarryLogAnalysis(
         ticket=ticket,
         nights=nights,
@@ -539,5 +659,6 @@ def analyse(rows: Sequence[CarryRow]) -> CarryLogAnalysis:
         charge_per_lot_per_night=per_lot,
         triple_swap_weekday=triple,
         charges_swaps=charges,
+        field=field,
         notes=tuple(notes),
     )
