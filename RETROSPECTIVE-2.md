@@ -346,12 +346,14 @@ costume of a rule.
 
 ---
 
-## 5. Instrument defects: nine, and the pattern held every time
+## 5. Instrument defects: ten, and the pattern held every time
 
-The count is **nine**. Seven were defects in code. **The eighth, added 2026-07-29, is a
+The count is **ten**. Seven were defects in code. **The eighth, added 2026-07-29, is a
 defect in a *claim about* code** — and it is the only one that reached a merged commit.
 **The ninth, added 2026-08-01, is neither**: correct code printing a correct number
-that could not be checked from what was printed. See §5.2.
+that could not be checked from what was printed. See §5.2. **The tenth, added
+2026-08-02, is a guard that was present, ran, and was measuring the wrong quantity.**
+See §5.3.
 
 | # | defect | caught by |
 |---|---|---|
@@ -364,21 +366,23 @@ that could not be checked from what was printed. See §5.2.
 | 7 | **separability** costing 426,723 iterations against 314 at identical conditioning | an independent IRLS solve |
 | 8 | **`rollovers_crossed` "counts five rollovers a week"** — it counts seven | running the function on a known week |
 | 9 | **a `3.64x` divergence printed with no denominator** — a per-calendar-day figure read as a per-night one | reconstructing the number from the raw charge |
+| 10 | **a stale weekend tick read as a server offset of `-23.0`**, labelled `measured`, then cached | noticing a hold had got *shorter* between two readings |
 
-**The pattern, unchanged across all nine:**
+**The pattern, unchanged across all ten:**
 
 - Every one was **fluent**. No warning, no `NaN`, no stack trace.
-- **Four of nine had a self-check that agreed with them**, because the self-check shared
+- **Five of ten had a self-check that agreed with them**, because the self-check shared
   the assumption. In #6 the self-check *was the gate*, returning PASS.
 - **None was caught by re-reading the code.** Each needed an external reference or an
   adversarial fixture: a published calendar, `zoneinfo`, a corrupted input, a probe grid, a
-  second solver — for #8, simply calling the function, and for #9, recomputing the printed
-  number from the charge it came from.
-- **Five of nine made the data look worse than it is**, not better. The failure mode is not
+  second solver — for #8, simply calling the function, for #9, recomputing the printed
+  number from the charge it came from, and for #10, comparing one reading against the
+  previous one.
+- **Five of ten made the data look worse than it is**, not better. The failure mode is not
   optimism. It is confidence.
-- **Three of nine were inside machinery written to prevent a defect** — the probe grid, the
-  convergence rule, and the divergence report itself. Instrument count is not monotone in
-  instrument care.
+- **Four of ten were inside machinery written to prevent a defect** — the probe grid, the
+  convergence rule, the divergence report itself, and the staleness guard that #10 walked
+  through. Instrument count is not monotone in instrument care.
 
 ### 5.1 Why #8 is a different kind, and the worse kind
 
@@ -470,6 +474,101 @@ have the most alternative explanations available to reach for.
 `tests/risk/test_swap.py` and `tests/risk/test_report.py` reconstruct `3.64x`, `3.395x` and
 the counterfactual `5.10x` from the raw charge, so all three numbers are pinned by tests
 rather than by this section.
+
+---
+
+### 5.3 Why #10 is the worst kind: a guard that ran, and measured the wrong thing
+
+Added 2026-08-02, from a reading taken at 02:00 Baghdad on a Sunday with the market shut.
+
+`measure_server_offset` differences a tick against true UTC. On a closed market the tick is
+whatever Friday left behind, so the difference is the tick's **staleness** and not the
+clock. The guard against that was already there, already correct in intent, and it fired
+once — it refused a closed-market read that came in **24.3 minutes** off a whole hour.
+
+The next one came in **3.9 minutes** off. It passed, returned **`-23.0`**, and the tool
+labelled it `measured`.
+
+**The consequence was silent and total.** Every `opened_at` moved 26 hours later. One hold
+went from 62.7 to 45.2 hours against a real ~71. The headline divergence ratio moved from
+**`3.64x` to `5.05x`** — and `5.05 / 3.64 = 1.387 = 62.7 / 45.2`, exactly, because
+**the swap charge never moved. Only the denominator did.** Not one refusal fired.
+
+**Then it was cached**, so every subsequent run inherited it without the tick that produced
+it, and the defect outlived the reading by more than the reading lasted.
+
+#### The threshold was on the wrong quantity, and the error rate was computable in advance
+
+This is what makes #10 worse than a missing guard. The guard existed. It tested the
+**residual off a whole hour**, which is a *proxy* for staleness. Under staleness that
+residual is very nearly uniform on `[0, 30)` minutes, so a 5-minute window admits
+
+    5 / 30 = **one stale tick in six.**
+
+That number needed no data. It follows from the shape of the test, and it was available on
+the day the test was written. A guard with a **17% false-pass rate by construction** is not
+a guard that got unlucky; it is a guard whose specification nobody differentiated.
+
+**The right quantity was one step away and was never tested: the offset itself.** No place
+on earth is at UTC-23. Testing the output rather than a proxy for the input costs one
+comparison.
+
+#### Two guards, and the second is the stronger one
+
+**Guard 1 — a plausibility bound on the offset** (`risk.clock.offset_is_plausible`). The
+bound is `-12..+14`, the range of real UTC offsets. Deliberately **not** tightened to
+"MT5 servers are UTC+0 to UTC+3": that would be a preference about brokers, and a wrong
+preference refuses a real reading somewhere, indistinguishably from a real fault. This one
+is a fact about time zones and cannot be wrong.
+
+It catches this instance. **It does not catch the general case** — a tick stale by exactly
+twelve hours moves a UTC+3 server to UTC-9, which is Alaska, and passes. `[MEASURED]`
+`tests/risk/test_continuity.py::test_a_plausible_but_wrong_offset_defeats_the_bound_and_not_the_invariant`.
+
+**Guard 2 — an invariant on the derived value** (`risk.continuity`). *A position's
+`opened_at` cannot change.* A broker does not reopen a position, so if the converted value
+moves between two readings, the conversion changed. This needs to know **nothing about
+clocks, ticks, brokers or time zones** — it is a property of the output rather than of the
+input, which is exactly what makes it independent of every assumption the derivation makes.
+It catches all of them, including the ones guard 1 cannot see.
+
+The baseline stores the **first** value seen and never overwrites it. Storing the latest
+would let a bad reading rewrite the baseline, so the guard would fire once and then agree
+with the corruption forever after — a guard that heals itself after one bad sample is not a
+guard. The cost is stated rather than hidden: if the *first* reading is the corrupt one,
+every later one is refused instead, and the refusal prints both instants so a person can
+tell which is which.
+
+#### The rest of the blast radius, closed
+
+- **A suspect measurement is never cached**, and the cache is **re-validated on read** — a
+  file written before the check existed is otherwise indistinguishable from a good one by
+  age alone, which is precisely how this survived. `--clear-offset-cache` removes the cache
+  and the continuity baseline; it does **not** touch the carry log, because that is the
+  measurement rather than derived state.
+- **The carry log refuses to append** unless the offset was freshly measured on this run, or
+  explicitly asserted on the command line. A cached offset is refused; an explicit one is
+  not, because a person re-asserts it every run, which is the opposite of silent inheritance.
+- **The analyser refuses a whole log** containing a row it cannot trust, rather than
+  filtering it. Filtering is a judgement made once, silently, and inherited by every later
+  reading of the file.
+- **The report names its own blast radius.** `render` prints which figures die with the
+  offset and which survive — the second list matters as much as the first, or a refusal
+  reads as "nothing here is usable" when the charge, the equity and the price are all fine.
+
+#### The lesson, and it is the fourth step in one direction
+
+§1.2: a rule that is not a test is a rule you are relying on luck to follow. §5.1: an
+assertion about someone else's code, with no test behind it, is an assertion you are relying
+on luck for. §5.2: a number whose units are not printed beside it is a number you are
+relying on luck to have read correctly. Now:
+
+**A guard that tests a proxy for the thing you care about has a false-pass rate, and if you
+have not computed it you are relying on luck for that too.**
+
+The corollary is the one worth keeping: **prefer an invariant on the derived value over a
+threshold on the input.** The threshold needs a model of how the input goes wrong. The
+invariant does not — and #10 went wrong in a way the threshold's model did not contain.
 
 ---
 

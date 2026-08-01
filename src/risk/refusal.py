@@ -41,6 +41,13 @@ class RefusalCode(StrEnum):
     #: The server clock could not be located, so the server day and the
     #: rollover boundary are both unknown.
     NO_SERVER_CLOCK = "NO_SERVER_CLOCK"
+    #: The measured server offset is outside the range of real UTC offsets, so
+    #: it is not a clock reading -- it is a stale tick differenced against now.
+    OFFSET_IMPLAUSIBLE = "OFFSET_IMPLAUSIBLE"
+    #: A position's ``opened_at`` moved between two readings. A broker does not
+    #: reopen a position, so the clock the timestamp was converted through
+    #: changed, and **every** figure derived from an age is void.
+    POSITION_AGE_MOVED = "POSITION_AGE_MOVED"
     #: A position has not been open long enough for its measured financing
     #: rate to mean anything.
     CARRY_TOO_YOUNG = "CARRY_TOO_YOUNG"

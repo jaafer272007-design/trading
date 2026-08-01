@@ -213,3 +213,61 @@ def test_the_measured_rows_carry_their_denominator_into_the_table() -> None:
     assert "points/lot/night crossed" in text
     assert "points/lot/calendar day" in text
     assert max(len(line) for line in text.splitlines()) <= 100
+
+
+def test_a_healthy_freshly_measured_clock_needs_no_paragraph() -> None:
+    text = render(
+        build_report(
+            now=fixtures.NOW,
+            terminal=fixtures.terminal(),
+            account=fixtures.account(),
+            positions=(fixtures.position(),),
+            deals=(),
+            terms_by_symbol={"XAUUSD": fixtures.gold()},
+            config=RiskConfig(),
+        )
+    )
+    assert "SERVER CLOCK" not in text
+
+
+def test_a_cached_clock_prints_its_own_blast_radius() -> None:
+    # The reader has to be able to see which figures die with the offset
+    # without deriving the dependency graph themselves.
+    text = render(
+        build_report(
+            now=fixtures.NOW,
+            terminal=fixtures.terminal(server_offset_source="cached"),
+            account=fixtures.account(),
+            positions=(fixtures.position(),),
+            deals=(),
+            terms_by_symbol={"XAUUSD": fixtures.gold()},
+            config=RiskConfig(),
+        )
+    )
+    assert "SERVER CLOCK - which figures below depend on it" in text
+    assert "VOID if the offset is wrong" in text
+    assert "UNAFFECTED - read, not derived" in text
+    # The two lists must be specific enough to act on.
+    assert "BOTH denominators" in text
+    assert "financing PAID so far" in text
+    assert max(len(line) for line in text.splitlines()) <= 100
+
+
+def test_a_fired_continuity_guard_says_so_above_every_number() -> None:
+    slid = fixtures.position(
+        opened_at=fixtures.position().opened_at + timedelta(hours=26)
+    )
+    text = render(
+        build_report(
+            now=fixtures.NOW,
+            terminal=fixtures.terminal(),
+            account=fixtures.account(),
+            positions=(slid,),
+            deals=(),
+            terms_by_symbol={"XAUUSD": fixtures.gold()},
+            config=RiskConfig(),
+            opening_baseline={slid.ticket: fixtures.position().opened_at},
+        )
+    )
+    assert "FIRED - timing is REFUSED" in text
+    assert text.index("SERVER CLOCK") < text.index("POSITIONS")

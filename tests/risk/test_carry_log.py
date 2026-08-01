@@ -11,6 +11,7 @@ instrument cannot tell those apart when handed them, it will not tell anything
 apart when handed a real log.
 """
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -445,3 +446,69 @@ def test_two_monotone_nights_are_undetermined_and_say_which_conditions_failed() 
     assert not any("posting resolution" in r for r in result.power.reasons)
     # And the magnitude is settled regardless.
     assert result.charge_per_lot_per_night == pytest.approx(67.9)
+
+
+# --------------------------------------------------------------------------
+# A log with a contaminated row is refused, not filtered
+# --------------------------------------------------------------------------
+
+
+def _line(**overrides: object) -> str:
+    payload: dict[str, object] = {
+        "at": "2026-08-02T02:00:00+00:00",
+        "ticket": 7,
+        "carry_paid": 13.58,
+        "price": 4_042.0,
+        "volume": 0.1,
+        "server_offset_hours": 3.0,
+        "server_offset_source": "measured",
+    }
+    payload.update(overrides)
+    return json.dumps(payload)
+
+
+def test_a_sound_row_parses() -> None:
+    rows = parse_rows([_line()])
+    assert rows[0].server_offset_source == "measured"
+
+
+def test_a_row_written_under_an_impossible_offset_refuses_the_whole_log() -> None:
+    # `[MEASURED]` 2026-08-02: row 1 of the live log carried -23.0.
+    with pytest.raises(ValueError, match="row 1 of this log cannot be trusted"):
+        parse_rows([_line(server_offset_hours=-23.0), _line()])
+
+
+def test_the_refusal_says_why_it_does_not_simply_drop_the_row() -> None:
+    # Filtering is a judgement made once, silently, and inherited by every
+    # later reading of the file. Refusing forces it to be made deliberately.
+    with pytest.raises(ValueError, match="cannot be trusted") as exc:
+        parse_rows([_line(server_offset_hours=-23.0)])
+    assert "THE WHOLE LOG IS REFUSED rather than filtered" in str(exc.value)
+    assert "Start a fresh log" in str(exc.value)
+
+
+def test_a_row_written_on_a_cached_clock_refuses_the_log_too() -> None:
+    with pytest.raises(ValueError, match="rather than a fresh measurement"):
+        parse_rows([_line(server_offset_source="cached")])
+
+
+def test_a_row_from_before_the_field_existed_is_judged_on_its_offset_alone() -> None:
+    # Old rows carry no source. Judging them on the offset they recorded is
+    # what makes the guard work on logs written before the guard did.
+    payload = json.loads(_line())
+    del payload["server_offset_source"]
+    assert parse_rows([json.dumps(payload)])[0].server_offset_source is None
+
+    payload["server_offset_hours"] = -23.0
+    with pytest.raises(ValueError, match="outside the range of real UTC offsets"):
+        parse_rows([json.dumps(payload)])
+
+
+def test_a_row_with_no_offset_at_all_is_not_refused() -> None:
+    # An absent offset is already reported as an absent server weekday. It is
+    # not evidence of corruption, and refusing it would refuse every log
+    # written on a terminal whose clock could not be located.
+    payload = json.loads(_line())
+    payload["server_offset_hours"] = None
+    del payload["server_offset_source"]
+    assert parse_rows([json.dumps(payload)])[0].server_offset_hours is None

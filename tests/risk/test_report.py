@@ -335,3 +335,83 @@ def test_the_registered_denominator_in_the_assembled_report_is_seven_nights() ->
     for c in report.swap[0].comparisons:
         assert c.registered_points == pytest.approx(140.0)
         assert c.registered_points != pytest.approx(100.0)
+
+
+# --------------------------------------------------------------------------
+# Instrument defect #10 -- the clock, and what dies with it
+# --------------------------------------------------------------------------
+
+
+def test_an_implausible_offset_is_refused_rather_than_used_as_a_clock() -> None:
+    # `[MEASURED]` 2026-08-02: -23.0, reported as "measured".
+    report = _report(
+        terminal_kwargs={
+            "server_utc_offset_hours": -23.0,
+            "server_offset_source": "measured",
+        }
+    )
+    assert RefusalCode.OFFSET_IMPLAUSIBLE in {r.code for r in report.refusals}
+    reason = next(
+        r.reason for r in report.refusals if r.code is RefusalCode.OFFSET_IMPLAUSIBLE
+    )
+    assert "-23.0 hours" in reason
+    assert "stale tick" in reason
+    # And nothing downstream may quietly use it: nights held is refused with it.
+    assert report.carries[0].nights_held is None
+
+
+def test_a_moved_opening_time_refuses_the_whole_timing_section() -> None:
+    baseline = {fixtures.position().ticket: fixtures.position().opened_at}
+    slid = fixtures.position(
+        opened_at=fixtures.position().opened_at + timedelta(hours=26)
+    )
+    report = build_report(
+        now=fixtures.NOW,
+        terminal=fixtures.terminal(),
+        account=fixtures.account(),
+        positions=(slid,),
+        deals=(),
+        terms_by_symbol=TERMS,
+        config=CONFIG,
+        opening_baseline=baseline,
+    )
+    assert not report.timing_is_trustworthy
+    assert report.timing_refusal is not None
+    assert RefusalCode.POSITION_AGE_MOVED in {r.code for r in report.refusals}
+
+
+def test_the_age_alerts_are_replaced_rather_than_left_to_be_wrong() -> None:
+    # A wrong age is not a missing age. The time-in-trade tripwire exists
+    # because of a two-month hold; firing it off a corrupted clock, or
+    # silently not firing it, are both worse than saying it is off.
+    baseline = {fixtures.position().ticket: fixtures.position().opened_at}
+    slid = fixtures.position(
+        opened_at=fixtures.position().opened_at + timedelta(hours=26)
+    )
+    report = build_report(
+        now=fixtures.NOW,
+        terminal=fixtures.terminal(),
+        account=fixtures.account(),
+        positions=(slid,),
+        deals=(),
+        terms_by_symbol=TERMS,
+        config=CONFIG,
+        opening_baseline=baseline,
+    )
+    assert AlertCode.TIME_IN_TRADE not in _codes(report)
+    alert = next(
+        a
+        for a in report.alerts
+        if a.code is AlertCode.REFUSAL and a.subject == "position timing"
+    )
+    assert alert.severity is Severity.CRITICAL
+    assert "NOT BEING ENFORCED" in alert.detail
+
+
+def test_a_reading_with_no_baseline_behaves_exactly_as_before() -> None:
+    # The guard must not change a first run, or every fresh install starts by
+    # refusing itself.
+    report = _report()
+    assert report.timing_is_trustworthy
+    assert report.continuity.checked == 0
+    assert AlertCode.TIME_IN_TRADE in _codes(report)

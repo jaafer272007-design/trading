@@ -92,12 +92,19 @@ import argparse
 import json
 import platform
 import sys
+import textwrap
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from risk.clock import (
+    MAX_PLAUSIBLE_UTC_OFFSET_HOURS,
+    MIN_PLAUSIBLE_UTC_OFFSET_HOURS,
+    offset_is_plausible,
+)
 from risk.config import RiskConfig
+from risk.continuity import merge_openings
 from risk.notify import (
     Alert,
     AlertCode,
@@ -149,6 +156,7 @@ DEFAULT_STATE_DIR: Final = Path.home() / ".trading-risk"
 HEARTBEAT_NAME: Final = "heartbeat.json"
 ALERTS_NAME: Final = "alerts.jsonl"
 CARRY_LOG_NAME: Final = "carry.jsonl"
+OPENINGS_NAME: Final = "position-openings.json"
 OFFSET_CACHE_NAME: Final = "server-offset.json"
 
 #: How far a tick may be from a whole-hour offset before the measurement is
@@ -308,11 +316,35 @@ def measure_server_offset(mt5: Any, symbol: str) -> tuple[float | None, str]:
             f"offset, so the market is probably closed and this would measure "
             f"tick staleness rather than the clock"
         )
+    # The residual test is necessary and NOT sufficient, and its false-pass
+    # rate is computable rather than a matter of opinion: under staleness the
+    # residual is uniform on [0, 30) minutes, so a 5-minute window lets
+    # ONE STALE TICK IN SIX through. `[MEASURED]` 2026-08-02 one did, at 3.9
+    # minutes off the hour, and produced -23.0. This second test is on the
+    # quantity that matters -- the offset itself -- rather than on a proxy.
+    if not offset_is_plausible(float(whole)):
+        return None, (
+            f"the tick implies an offset of {whole:+.0f} hours, outside the "
+            f"{MIN_PLAUSIBLE_UTC_OFFSET_HOURS:+.0f}..."
+            f"{MAX_PLAUSIBLE_UTC_OFFSET_HOURS:+.0f} range of real UTC "
+            f"offsets. No place on earth uses it, so the tick is stale by "
+            f"roughly a whole number of hours and this is its staleness, not "
+            f"a clock. It happened to land {residual_minutes:.1f} min off the "
+            f"hour, which is why the staleness test alone passed it"
+        )
     return float(whole), f"measured from a tick {residual_minutes:.1f} min off the hour"
 
 
 def load_cached_offset(path: Path) -> tuple[float | None, str]:
-    """Read a previously measured offset.
+    """Read a previously measured offset, re-checking it on the way out.
+
+    **The plausibility test is applied on read as well as on write.** A cache
+    written by an earlier version of this file, or by a run that predates the
+    test, is indistinguishable from a good one by age alone -- and
+    `[MEASURED]` 2026-08-02 exactly such a value was cached and then inherited
+    by every subsequent run, so the defect outlived the reading that caused it.
+    Validating on read is what stops a poisoned cache from needing a human to
+    delete a file.
 
     Args:
         path: Cache file.
@@ -324,21 +356,35 @@ def load_cached_offset(path: Path) -> tuple[float | None, str]:
         return None, "no cached measurement exists"
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        return float(payload["utc_offset_hours"]), (
-            f"cached from a measurement at {payload['measured_at']}"
-        )
+        offset = float(payload["utc_offset_hours"])
+        measured_at = payload["measured_at"]
     except (OSError, ValueError, KeyError) as exc:
         return None, f"the cached measurement could not be read: {exc}"
+    if not offset_is_plausible(offset):
+        return None, (
+            f"the cached offset of {offset:+.1f} hours, from {measured_at}, is "
+            f"outside the range of real UTC offsets and is being IGNORED. It "
+            f"was written before this check existed; clear it with "
+            f"--clear-offset-cache"
+        )
+    return offset, f"cached from a measurement at {measured_at}"
 
 
-def save_cached_offset(path: Path, offset: float, now: datetime) -> None:
+def save_cached_offset(path: Path, offset: float, now: datetime) -> bool:
     """Record a measured offset for use while the market is closed.
 
     Args:
         path: Cache file.
         offset: Measured offset in hours.
         now: When it was measured.
+
+    Returns:
+        Whether it was written. **An implausible value is never cached**: a
+        suspect reading that persists is worse than one that does not, because
+        the next run inherits it without the tick that produced it.
     """
+    if not offset_is_plausible(offset):
+        return False
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -347,6 +393,77 @@ def save_cached_offset(path: Path, offset: float, now: datetime) -> None:
         ),
         encoding="utf-8",
     )
+    return True
+
+
+def load_openings(path: Path) -> tuple[dict[int, datetime], datetime | None]:
+    """Read the continuity baseline written by previous readings.
+
+    Args:
+        path: Baseline file.
+
+    Returns:
+        ``(opened_at by ticket, when the last reading was taken)``. Both empty
+        on a first run or an unreadable file -- a guard that cannot read its
+        own state must not refuse everything, or a corrupt byte becomes an
+        outage.
+    """
+    if not path.exists():
+        return {}, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        openings = {
+            int(ticket): datetime.fromisoformat(when)
+            for ticket, when in payload["openings"].items()
+        }
+        last = payload.get("last_reading_at")
+        return openings, datetime.fromisoformat(last) if last else None
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return {}, None
+
+
+def save_openings(path: Path, openings: dict[int, datetime], now: datetime) -> None:
+    """Write the continuity baseline forward.
+
+    Args:
+        path: Baseline file.
+        openings: First-seen ``opened_at`` per open ticket.
+        now: This reading's time.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "openings": {str(k): v.isoformat() for k, v in openings.items()},
+                "last_reading_at": now.isoformat(),
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def clear_state(state_dir: Path) -> list[Path]:
+    """Delete the cached offset and the continuity baseline.
+
+    Both are derived state and both are rebuilt on the next reading from a
+    fresh tick. Neither is a measurement, so nothing is lost. **The carry log
+    is deliberately not touched** -- it *is* the measurement, and a flag that
+    silently deletes a week of readings is a flag someone will regret.
+
+    Args:
+        state_dir: Where the adapter keeps its state.
+
+    Returns:
+        The files removed.
+    """
+    removed: list[Path] = []
+    for name in (OFFSET_CACHE_NAME, OPENINGS_NAME):
+        target = state_dir / name
+        if target.exists():
+            target.unlink()
+            removed.append(target)
+    return removed
 
 
 def resolve_offset(
@@ -706,16 +823,20 @@ def current_price(mt5: Any, symbol: str) -> float | None:
 def take_reading(
     mt5: Any,
     symbol: str,
-    cache_path: Path,
+    state_dir: Path,
     explicit_offset: float | None,
     config: RiskConfig,
 ) -> tuple[RiskReport, str, float | None]:
     """Read the terminal once and build a report from it.
 
+    Loads the continuity baseline before the reading and writes it forward
+    after, so that the guard in :mod:`risk.continuity` is armed for every mode
+    rather than only for the long-running monitor.
+
     Args:
         mt5: The MetaTrader5 module.
         symbol: Symbol to always include.
-        cache_path: Offset cache.
+        state_dir: Where the offset cache and continuity baseline live.
         explicit_offset: Command-line override.
         config: Operating limits.
 
@@ -723,8 +844,10 @@ def take_reading(
         ``(report, clock_reason, price)``.
     """
     now = datetime.now(UTC)
+    openings_path = state_dir / OPENINGS_NAME
+    baseline, previous_at = load_openings(openings_path)
     terminal, account, positions, deals, terms, clock_reason = read_everything(
-        mt5, symbol, cache_path, explicit_offset, now
+        mt5, symbol, state_dir / OFFSET_CACHE_NAME, explicit_offset, now
     )
     price = current_price(mt5, symbol)
     report = build_report(
@@ -736,13 +859,48 @@ def take_reading(
         terms_by_symbol=terms,
         config=config,
         price_by_symbol={symbol: price} if price is not None else None,
+        opening_baseline=baseline,
+        previous_reading_at=previous_at,
     )
+    # Written whether or not the guard fired: the baseline keeps FIRST-seen
+    # values, so a bad reading cannot overwrite a good one, and recording the
+    # reading time is what catches a host clock that goes backwards.
+    save_openings(openings_path, merge_openings(baseline, positions), now)
     return report, clock_reason, price
 
 
 # --------------------------------------------------------------------------
 # Heartbeat
 # --------------------------------------------------------------------------
+
+
+def carry_log_refusal(report: RiskReport) -> str | None:
+    """Why this reading must not be recorded, if it must not be.
+
+    Args:
+        report: The reading just taken.
+
+    Returns:
+        A sentence naming the cause and the remedy, or ``None`` when the
+        reading may be logged.
+    """
+    if not report.timing_is_trustworthy and report.timing_refusal is not None:
+        return (
+            f"the continuity guard fired: {report.timing_refusal.reason}. "
+            f"Nothing is appended. Resolve it, then clear the baseline with "
+            f"--clear-offset-cache if the stored value is the wrong one"
+        )
+    source = report.terminal.server_offset_source
+    if source not in (OFFSET_MEASURED, OFFSET_EXPLICIT):
+        return (
+            f"the server offset came from {source!r}, not from a fresh "
+            f"measurement on this run. Every timing field in the row would be "
+            f"as wrong as the offset is, and a log that has to be filtered "
+            f"later can be filtered wrongly. Nothing is appended. Re-run while "
+            f"the market is open, or assert the offset yourself with "
+            f"--server-utc-offset <hours>"
+        )
+    return None
 
 
 def append_carry_log(path: Path, report: RiskReport, price: float | None) -> int:
@@ -770,18 +928,36 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> int
     do not carry it; :mod:`risk.carry_log` treats it as optional for exactly
     that reason and says so rather than assuming it was stable.
 
+    Nothing is appended unless the clock is trustworthy
+    ---------------------------------------------------
+
+    `[MEASURED]` 2026-08-02, instrument defect #10: a row was written while the
+    server offset was a cached, suspect value, and every timing field in it --
+    ``opened_at``, ``days_open``, ``nights_held`` -- was 26 hours out. **A log
+    the analyser has to filter is a log that can be filtered wrongly later**,
+    so this refuses instead:
+
+    - the offset must come from a **fresh measurement** on this run, or from an
+      explicit ``--server-utc-offset``. A *cached* offset is refused, because a
+      cached offset is exactly how the defect outlived the reading that caused
+      it. An explicit one is not: it is re-asserted by a person on every run,
+      which is the opposite of silent;
+    - the continuity guard in :mod:`risk.continuity` must not have fired.
+
+    A refusal costs a row. The alternative cost is a log that looks complete
+    and is not, which is the more expensive of the two.
+
     Args:
         path: File to append to.
         report: The reading just taken.
         price: Current price for the configured symbol, when known.
 
     Returns:
-        Rows appended. Zero when no position is open, which is a fact worth
-        surfacing rather than a no-op: a week of readings on a flat account
-        records nothing and measures nothing.
+        Rows appended. Zero when no position is open, or when the reading was
+        refused -- both are facts worth surfacing rather than no-ops.
     """
     published = {d.symbol: d for d in report.swap}
-    if not report.carries:
+    if not report.carries or carry_log_refusal(report) is not None:
         return 0
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -822,6 +998,13 @@ def append_carry_log(path: Path, report: RiskReport, price: float | None) -> int
                         "server_offset_hours": (
                             report.terminal.server_utc_offset_hours
                         ),
+                        # Recorded so a reader of the file can tell a measured
+                        # clock from an inherited one without re-deriving it.
+                        # The append is already refused unless this is
+                        # "measured" or "explicit"; the field is here so that
+                        # a log written by an older version can still be
+                        # judged.
+                        "server_offset_source": (report.terminal.server_offset_source),
                         "equity": report.account.equity,
                         "currency": report.account.currency,
                     },
@@ -965,16 +1148,17 @@ def run_probe(
         Process exit code.
     """
     now = datetime.now(UTC)
-    cache_path = state_dir / OFFSET_CACHE_NAME
+    openings_path = state_dir / OPENINGS_NAME
+    baseline, previous_at = load_openings(openings_path)
     terminal, account, positions, deals, terms, clock_reason = read_everything(
-        mt5, symbol, cache_path, explicit_offset, now
+        mt5, symbol, state_dir / OFFSET_CACHE_NAME, explicit_offset, now
     )
 
     header("0. WHAT THIS IS")
     note("A read-only probe of one MT5 account. It predicts nothing and places")
-    note("nothing. It writes two files: the offset cache, and one carry-log row")
-    note("per open position. Every number below is arithmetic on a field the")
-    note("terminal published.")
+    note("nothing. It writes three files: the offset cache, the continuity")
+    note("baseline, and one carry-log row per open position. Every number below")
+    note("is arithmetic on a field the terminal published.")
 
     header("1. TERMINAL AND CLOCK")
     version = mt5.version()
@@ -1089,7 +1273,10 @@ def run_probe(
         terms_by_symbol=terms,
         config=config,
         price_by_symbol={symbol: price} if price is not None else None,
+        opening_baseline=baseline,
+        previous_reading_at=previous_at,
     )
+    save_openings(openings_path, merge_openings(baseline, positions), now)
 
     header("6. THE REPORT THIS PRODUCES")
     print(render(report))
@@ -1099,6 +1286,7 @@ def run_probe(
 
     header("8. WHAT THIS READING CONTRIBUTED TO THE MEASUREMENT")
     carry_log = state_dir / CARRY_LOG_NAME
+    refused = carry_log_refusal(report)
     written = append_carry_log(carry_log, report, price)
     row("carry log", carry_log)
     row("rows appended by this run", written)
@@ -1109,6 +1297,10 @@ def run_probe(
         note("give one night; risk.carry_log needs five, and a price path that")
         note("changes direction twice.")
         note("Read it with:  python scripts/analyse_carry_log.py " + str(carry_log))
+    elif refused is not None:
+        row("appending was", "REFUSED")
+        for line in textwrap.wrap(refused, width=68):
+            note(line)
     else:
         note("NOTHING WAS RECORDED: no position is open. A week of probe reads")
         note("on a flat account measures nothing, because the quantity being")
@@ -1248,7 +1440,6 @@ def run_monitor(
     """
     notifier = build_notifier(state_dir, quiet)
     heartbeat = state_dir / HEARTBEAT_NAME
-    cache = state_dir / OFFSET_CACHE_NAME
 
     print(f"risk monitor: reading {symbol} every {interval:,.0f} seconds")
     print(f"  heartbeat  {heartbeat}")
@@ -1260,7 +1451,9 @@ def run_monitor(
 
     while True:
         try:
-            report, _, price = take_reading(mt5, symbol, cache, explicit_offset, config)
+            report, _, price = take_reading(
+                mt5, symbol, state_dir, explicit_offset, config
+            )
         except KeyboardInterrupt:
             print("\nstopped")
             return 0
@@ -1325,6 +1518,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     mode.add_argument(
         "--size", action="store_true", help="size a position at the configured risk"
+    )
+    mode.add_argument(
+        "--clear-offset-cache",
+        action="store_true",
+        help=(
+            "delete the cached server offset and the continuity baseline, then "
+            "exit. Both are derived state and both rebuild on the next reading; "
+            "the carry log is never touched"
+        ),
     )
     parser.add_argument("--symbol", default=None, help="symbol to read")
     parser.add_argument(
@@ -1403,9 +1605,22 @@ def main(argv: list[str] | None = None) -> int:
     config = config_from_args(args)
     state_dir = Path(args.state_dir)
 
-    # --status reads a file and needs no terminal, so it must not require one.
+    # Neither of these needs a terminal, so neither may require one. Clearing
+    # a poisoned cache has to work on the machine where the terminal is dead,
+    # which is where a poisoned cache is most likely to be noticed.
     if args.status:
         return report_status(state_dir / HEARTBEAT_NAME, config, datetime.now(UTC))
+
+    if args.clear_offset_cache:
+        removed = clear_state(state_dir)
+        if removed:
+            for target in removed:
+                print(f"removed {target}")
+            print("the next reading will measure the offset from a fresh tick")
+        else:
+            print(f"nothing to remove in {state_dir}")
+        print("the carry log was NOT touched; it is the measurement, not state")
+        return 0
 
     mt5 = require_mt5()
     try:
@@ -1428,11 +1643,15 @@ def main(argv: list[str] | None = None) -> int:
             # Three values, not two. The earlier unpack raised ValueError on
             # every invocation, which is how a mode nothing exercises fails.
             report, _, price = take_reading(
-                mt5, symbol, cache, args.server_utc_offset, config
+                mt5, symbol, state_dir, args.server_utc_offset, config
             )
             print(render(report))
+            refused = carry_log_refusal(report)
             written = append_carry_log(carry_log_path, report, price)
-            print(f"\ncarry log: {written} row(s) appended to {carry_log_path}")
+            if refused is not None:
+                print(f"\ncarry log: REFUSED - {refused}")
+            else:
+                print(f"\ncarry log: {written} row(s) appended to {carry_log_path}")
             return severity_exit_code(report)
 
         return run_monitor(

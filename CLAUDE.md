@@ -131,6 +131,14 @@ An earlier version of this section claimed `rollovers_crossed` "counts five roll
 
 The lesson is the same one §8 taught: **an assertion about someone else's code that is not a test is an assertion you are relying on luck for.** The magnitude and sign findings above survive this correction untouched.
 
+**The server clock is measured, bounded, and checked against itself.** `[MEASURED]` 2026-08-02, instrument defect #10: a stale weekend tick produced an offset of `-23.0`, was labelled `measured`, and was then cached. Every `opened_at` moved 26 hours, one hold read 45.2 against a real ~71, and the headline divergence ratio moved `3.64x → 5.05x` while the charge it was computed from never moved. Three things follow and none is optional:
+
+1. The offset is bounded to `-12..+14`, the range of real UTC offsets — a fact about time zones, not a preference about brokers. A suspect value is never cached, and the cache is re-validated on read.
+2. **A position's `opened_at` cannot change.** `src/risk/continuity.py` stores the first value seen per ticket and refuses the whole timing section when it moves. This is the stronger guard because it needs to know nothing about clocks — it is an invariant on the derived value, not a threshold on the input, and the plausibility bound is defeated by any staleness that happens to look like a real offset.
+3. The carry log **refuses to append** unless the offset was freshly measured or explicitly asserted, and the analyser refuses a whole log containing a row it cannot trust rather than filtering it.
+
+The general rule, `RETROSPECTIVE-2.md` §5.3: **prefer an invariant on the derived value over a threshold on the input.** The threshold that failed here was present and correct in intent; it tested a proxy, and its false-pass rate — one stale tick in six — was computable the day it was written.
+
 ### Enforcement
 
 `RETROSPECTIVE-2.md` §1.2: **a rule that is not a test is a rule you are relying on luck to follow.** Every statement above is asserted in `tests/risk/test_scope.py` and fails the build rather than decaying into prose.
