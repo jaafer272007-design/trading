@@ -19,7 +19,7 @@ because a cost nobody was watching emptied an account.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -29,8 +29,14 @@ from risk.carry import (
     portfolio_carry,
     position_carry,
 )
-from risk.clock import RolloverClock
+from risk.clock import (
+    MAX_PLAUSIBLE_UTC_OFFSET_HOURS,
+    MIN_PLAUSIBLE_UTC_OFFSET_HOURS,
+    RolloverClock,
+    offset_is_plausible,
+)
 from risk.config import RiskConfig
+from risk.continuity import ContinuityCheck, check_openings
 from risk.limits import (
     ConcurrencyStatus,
     DailyLossStatus,
@@ -91,6 +97,11 @@ class RiskReport:
         margin: Distance from the broker's intervention levels.
         daily_loss: The day's drawdown against the limit, or a refusal.
         concurrency: Open positions against the maximum.
+        continuity: What comparing this reading against the last established.
+        timing_refusal: Set when a position's ``opened_at`` moved between
+            readings. **While this is set, every age-derived figure in the
+            report is void** and the renderer prints the timing section as
+            refused rather than printing numbers nobody should read.
         refusals: Every quantity this reading declined to guess.
         alerts: Conditions worth interrupting someone for.
     """
@@ -104,8 +115,19 @@ class RiskReport:
     margin: MarginProjection
     daily_loss: DailyLossStatus | Refusal
     concurrency: ConcurrencyStatus
+    continuity: ContinuityCheck
+    timing_refusal: Refusal | None
     refusals: tuple[Refusal, ...]
     alerts: tuple[Alert, ...]
+
+    @property
+    def timing_is_trustworthy(self) -> bool:
+        """Whether any figure derived from a position's age may be read.
+
+        Returns:
+            False when the continuity guard fired.
+        """
+        return self.timing_refusal is None
 
     @property
     def worst_severity(self) -> Severity | None:
@@ -130,6 +152,8 @@ def build_report(
     terms_by_symbol: dict[str, SymbolTerms],
     config: RiskConfig,
     price_by_symbol: dict[str, float] | None = None,
+    opening_baseline: Mapping[int, datetime] | None = None,
+    previous_reading_at: datetime | None = None,
 ) -> RiskReport:
     """Turn one reading of the terminal into a report.
 
@@ -147,15 +171,33 @@ def build_report(
             basis of the swap comparison. Falls back to an open position's
             ``price_current`` when absent, and the annualised figures are simply
             omitted when neither is available.
+        opening_baseline: First-seen ``opened_at`` per ticket from previous
+            readings. Supplying it turns on the continuity guard, which is the
+            one check that catches a server-clock error without knowing
+            anything about clocks. See :mod:`risk.continuity`.
+        previous_reading_at: When the previous reading was taken, so that a
+            host clock that went backwards is caught too.
 
     Returns:
         The report, with alerts already raised but not yet delivered.
     """
-    clock = (
-        RolloverClock(terminal.server_utc_offset_hours)
-        if terminal.server_utc_offset_hours is not None
-        else None
-    )
+    offset = terminal.server_utc_offset_hours
+    offset_refusal: Refusal | None = None
+    if offset is not None and not offset_is_plausible(offset):
+        # Not a clock. Differencing a stale tick against now produces exactly
+        # this, and treating it as an offset moves every age by the error.
+        offset_refusal = Refusal(
+            RefusalCode.OFFSET_IMPLAUSIBLE,
+            "server clock",
+            f"the server offset reads {offset:+.1f} hours, outside the "
+            f"{MIN_PLAUSIBLE_UTC_OFFSET_HOURS:+.0f}..."
+            f"{MAX_PLAUSIBLE_UTC_OFFSET_HOURS:+.0f} range of real UTC "
+            f"offsets. No place on earth uses it, so this is a stale tick "
+            f"differenced against now rather than a clock reading. Every "
+            f"quantity needing the server day is refused",
+        )
+        offset = None
+    clock = RolloverClock(offset) if offset is not None else None
 
     declared_by_symbol = {
         name: declared_swap(terms, account.currency)
@@ -209,7 +251,15 @@ def build_report(
     )
     concurrency = concurrency_status(positions, config.max_concurrent_positions)
 
+    continuity = check_openings(
+        opening_baseline or {}, positions, previous_reading_at, now
+    )
+    timing_refusal = continuity.refusals[0] if continuity.refusals else None
+
     refusals: list[Refusal] = []
+    if offset_refusal is not None:
+        refusals.append(offset_refusal)
+    refusals.extend(continuity.refusals)
     if not terminal.connected:
         refusals.append(
             Refusal(
@@ -227,7 +277,16 @@ def build_report(
         refusals.append(daily)
 
     alerts = _raise_alerts(
-        now, terminal, carries, portfolio, swap, margin, daily, concurrency, config
+        now,
+        terminal,
+        carries,
+        portfolio,
+        swap,
+        margin,
+        daily,
+        concurrency,
+        config,
+        timing_refusal,
     )
 
     return RiskReport(
@@ -240,6 +299,8 @@ def build_report(
         margin=margin,
         daily_loss=daily,
         concurrency=concurrency,
+        continuity=continuity,
+        timing_refusal=timing_refusal,
         refusals=tuple(refusals),
         alerts=alerts,
     )
@@ -300,6 +361,7 @@ def _raise_alerts(
     daily: DailyLossStatus | Refusal,
     concurrency: ConcurrencyStatus,
     config: RiskConfig,
+    timing_refusal: Refusal | None = None,
 ) -> tuple[Alert, ...]:
     """Decide which conditions in a reading are worth raising.
 
@@ -313,6 +375,9 @@ def _raise_alerts(
         daily: Daily loss status or refusal.
         concurrency: Position count status.
         config: Operating limits.
+        timing_refusal: Set when the continuity guard fired, in which case
+            every age-derived alert is suppressed and replaced by one saying
+            so.
 
     Returns:
         Alerts, most severe first, then by code.
@@ -335,8 +400,21 @@ def _raise_alerts(
             "terminal",
         )
 
-    for c in carries:
-        _position_alerts(c, config, raise_alert)
+    if timing_refusal is not None:
+        # CRITICAL rather than WARN, and louder than the alerts it replaces.
+        # A wrong age is not a missing age: the time-in-trade tripwire would
+        # have fired late or not at all, and this layer exists because of a
+        # two-month hold nobody was timing.
+        raise_alert(
+            AlertCode.REFUSAL,
+            Severity.CRITICAL,
+            "position timing",
+            f"NOT BEING ENFORCED - {timing_refusal.reason}",
+            timing_refusal.code.value,
+        )
+    else:
+        for c in carries:
+            _position_alerts(c, config, raise_alert)
 
     if margin.stop_out is not None:
         _level_alerts(margin, config, raise_alert)

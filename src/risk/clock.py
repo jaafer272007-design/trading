@@ -82,6 +82,35 @@ DAYS_PER_WEEK: Final = 7.0
 HOURS_PER_DAY: Final = 24.0
 SECONDS_PER_HOUR: Final = 3600.0
 
+#: The range of real UTC offsets, from Baker Island to Kiritimati. A server
+#: clock outside it is not a clock.
+#:
+#: These are **facts about time zones, not judgements about brokers.** A
+#: tighter bound -- "MT5 servers are UTC+0 to UTC+3" -- would be a preference,
+#: and a wrong preference refuses a legitimate reading. This one cannot be
+#: wrong.
+#:
+#: `[MEASURED]` 2026-08-02, instrument defect #10: a closed-market tick
+#: produced ``-23.0`` and was reported as a measurement. It is 11 hours outside
+#: the widest offset any place on earth uses.
+MIN_PLAUSIBLE_UTC_OFFSET_HOURS: Final = -12.0
+MAX_PLAUSIBLE_UTC_OFFSET_HOURS: Final = 14.0
+
+
+def offset_is_plausible(offset_hours: float) -> bool:
+    """Whether a measured server offset could be a clock at all.
+
+    Args:
+        offset_hours: Server wall clock minus UTC, in hours.
+
+    Returns:
+        True when it lies inside the range of real UTC offsets.
+    """
+    return (
+        MIN_PLAUSIBLE_UTC_OFFSET_HOURS <= offset_hours <= MAX_PLAUSIBLE_UTC_OFFSET_HOURS
+    )
+
+
 #: Nights of financing per calendar day, averaged over a full week. It is 1.0,
 #: and it is written as a ratio rather than as the literal because the two
 #: sevens are different quantities that happen to be equal: seven nights are

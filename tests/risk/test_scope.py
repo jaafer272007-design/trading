@@ -237,3 +237,18 @@ def test_the_package_docstring_states_the_scope_it_is_held_to() -> None:
     text = (SRC / "risk" / "__init__.py").read_text(encoding="utf-8")
     assert "joins no pipeline" in text
     assert "makes no claim about markets" in text
+
+
+def test_the_clock_guards_are_asserted_rather_than_described() -> None:
+    # CLAUDE.md states three things about the server clock after instrument
+    # defect #10. RETROSPECTIVE-2.md Sec 1.2: a rule that is not a test is a
+    # rule you are relying on luck to follow.
+    text = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "instrument defect #10" in text
+    assert (
+        "prefer an invariant on the derived value over a threshold on the input" in text
+    )
+
+    retro = (REPO / "RETROSPECTIVE-2.md").read_text(encoding="utf-8")
+    assert "### 5.3" in retro
+    assert "one stale tick in six" in retro

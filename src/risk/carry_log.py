@@ -135,6 +135,8 @@ from enum import StrEnum
 from itertools import pairwise
 from typing import Final
 
+from risk.clock import offset_is_plausible
+
 #: Resolution of one nightly increment. Brokers post to the cent, so two charges
 #: differing by less than this are indistinguishable however many readings are
 #: taken. Conservative: the field is a double, but the posting is not.
@@ -189,6 +191,8 @@ class CarryRow:
         published_swap_long: ``symbol_info().swap_long`` as read at that
             moment, raw and unconverted. ``None`` for rows written before the
             field was logged, which is not the same as "it did not move".
+        server_offset_source: How the offset in this row was obtained.
+            ``None`` for rows written before the field existed.
     """
 
     at: datetime
@@ -198,6 +202,7 @@ class CarryRow:
     volume: float
     server_offset_hours: float | None
     published_swap_long: float | None = None
+    server_offset_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,11 +346,59 @@ def parse_rows(lines: Iterable[str]) -> tuple[CarryRow, ...]:
                         if payload.get("published_swap_long") is not None
                         else None
                     ),
+                    server_offset_source=(
+                        str(payload["server_offset_source"])
+                        if payload.get("server_offset_source") is not None
+                        else None
+                    ),
                 )
             )
         except (KeyError, TypeError) as exc:
             raise ValueError(f"not a carry-log record: {line[:120]}") from exc
+    for index, row in enumerate(out, start=1):
+        complaint = row_is_untrustworthy(row)
+        if complaint is not None:
+            raise ValueError(
+                f"row {index} of this log cannot be trusted: {complaint}. "
+                f"THE WHOLE LOG IS REFUSED rather than filtered -- dropping "
+                f"rows here would be a judgement made once, silently, and "
+                f"inherited by every later reading of the file. Start a fresh "
+                f"log, or remove the row deliberately and knowingly"
+            )
     return tuple(out)
+
+
+def row_is_untrustworthy(row: CarryRow) -> str | None:
+    """Whether a row's timing fields may be read.
+
+    Rows are judged on the offset they recorded rather than on trust in the
+    writer, so a log written by a version that predates the write-side guard
+    is judged by the same rule as a new one.
+
+    Args:
+        row: One reading.
+
+    Returns:
+        The reason, or ``None`` when the row is sound.
+    """
+    if row.server_offset_hours is not None and not offset_is_plausible(
+        row.server_offset_hours
+    ):
+        return (
+            f"it recorded a server offset of {row.server_offset_hours:+.1f} "
+            f"hours, outside the range of real UTC offsets, so every timing "
+            f"field in it is wrong by that error"
+        )
+    if row.server_offset_source is not None and row.server_offset_source not in (
+        "measured",
+        "explicit",
+    ):
+        return (
+            f"its server offset came from {row.server_offset_source!r} rather "
+            f"than a fresh measurement, so its timing fields are as old as "
+            f"whatever produced that value"
+        )
+    return None
 
 
 def _coefficient_of_variation(values: Sequence[float]) -> float | None:

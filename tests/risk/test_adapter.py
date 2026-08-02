@@ -552,3 +552,154 @@ def test_every_mode_shuts_the_terminal_down(fake_mt5: _FakeMT5, tmp_path: Path) 
     ADAPTER.main(["--once", "--state-dir", str(tmp_path)])
     ADAPTER.main(["--size", "--state-dir", str(tmp_path)])
     assert fake_mt5.shutdown_calls == 3
+
+
+# --------------------------------------------------------------------------
+# Instrument defect #10: the clock, the cache, and the log
+# --------------------------------------------------------------------------
+
+
+def test_a_stale_tick_that_lands_near_the_hour_is_now_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The exact failure: 3.9 minutes off a whole hour, so the staleness test
+    # passed, implying an offset of -23. The staleness test is on a proxy; the
+    # new one is on the quantity itself.
+    class _StaleTick:
+        def symbol_info_tick(self, name: str) -> object:
+            server = datetime.now(UTC) - timedelta(hours=23, minutes=3, seconds=54)
+            return _Fields(time=int(server.timestamp()), ask=4_042.0, bid=4_041.8)
+
+    offset, reason = ADAPTER.measure_server_offset(_StaleTick(), "XAUUSD")
+    assert offset is None
+    assert "range of real UTC offsets" in reason
+    assert "staleness test alone passed it" in reason
+
+
+def test_an_implausible_measurement_is_never_written_to_the_cache(
+    tmp_path: Path,
+) -> None:
+    # A suspect reading that persists is worse than one that does not: the next
+    # run inherits it without the tick that produced it, which is exactly how
+    # the defect outlived the reading.
+    cache = tmp_path / "server-offset.json"
+    assert ADAPTER.save_cached_offset(cache, -23.0, datetime.now(UTC)) is False
+    assert not cache.exists()
+    assert ADAPTER.save_cached_offset(cache, 3.0, datetime.now(UTC)) is True
+    assert cache.exists()
+
+
+def test_a_cache_poisoned_by_an_older_version_is_ignored_on_read(
+    tmp_path: Path,
+) -> None:
+    # The user's actual state after the bad reading: -23.0 on disk, inherited
+    # by every run. Validating on read is what fixes it without a human
+    # deleting a file.
+    cache = tmp_path / "server-offset.json"
+    cache.write_text(
+        json.dumps({"utc_offset_hours": -23.0, "measured_at": "2026-08-02T02:00:00"}),
+        encoding="utf-8",
+    )
+    offset, reason = ADAPTER.load_cached_offset(cache)
+    assert offset is None
+    assert "IGNORED" in reason
+    assert "--clear-offset-cache" in reason
+
+
+def test_clearing_removes_derived_state_and_never_the_measurement(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "server-offset.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "position-openings.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "carry.jsonl").write_text('{"a": 1}\n', encoding="utf-8")
+
+    code = ADAPTER.main(["--clear-offset-cache", "--state-dir", str(tmp_path)])
+    assert code == 0
+    assert not (tmp_path / "server-offset.json").exists()
+    assert not (tmp_path / "position-openings.json").exists()
+    # The carry log IS the measurement. A flag that silently deletes a week of
+    # readings is a flag someone will regret.
+    assert (tmp_path / "carry.jsonl").exists()
+
+
+def test_clearing_needs_no_terminal(tmp_path: Path) -> None:
+    # It has to work on the machine where MT5 is dead, which is where a
+    # poisoned cache is most likely to be noticed.
+    assert ADAPTER.main(["--clear-offset-cache", "--state-dir", str(tmp_path)]) == 0
+
+
+def test_the_continuity_baseline_survives_a_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "position-openings.json"
+    opened = datetime(2026, 7, 30, 15, 14, tzinfo=UTC)
+    now = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    ADAPTER.save_openings(path, {7: opened}, now)
+    loaded, last = ADAPTER.load_openings(path)
+    assert loaded == {7: opened}
+    assert last == now
+
+
+def test_an_unreadable_baseline_does_not_take_the_monitor_down(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "position-openings.json"
+    path.write_text("not json", encoding="utf-8")
+    assert ADAPTER.load_openings(path) == ({}, None)
+
+
+def test_the_carry_log_refuses_a_reading_taken_on_a_cached_clock(
+    tmp_path: Path,
+) -> None:
+    # The second half of the defect: a row was written while the offset was
+    # cached and suspect, and every timing field in it was 26 hours out.
+    report = _report(
+        terminal=fixtures.terminal(server_offset_source="cached"),
+    )
+    refusal = ADAPTER.carry_log_refusal(report)
+    assert refusal is not None
+    assert "not from a fresh measurement" in refusal
+    assert "--server-utc-offset" in refusal
+
+    path = tmp_path / "carry.jsonl"
+    assert ADAPTER.append_carry_log(path, report, 4_042.0) == 0
+    assert not path.exists()
+
+
+def test_an_explicitly_asserted_offset_is_allowed_to_log() -> None:
+    # A person re-asserts it on every run, which is the opposite of the silent
+    # inheritance that caused the defect.
+    report = _report(terminal=fixtures.terminal(server_offset_source="explicit"))
+    assert ADAPTER.carry_log_refusal(report) is None
+
+
+def test_a_freshly_measured_offset_is_allowed_to_log() -> None:
+    assert ADAPTER.carry_log_refusal(_report()) is None
+
+
+def test_the_carry_log_refuses_when_the_continuity_guard_fired(
+    tmp_path: Path,
+) -> None:
+    slid = fixtures.position(
+        opened_at=fixtures.position().opened_at + timedelta(hours=26)
+    )
+    report = build_report(
+        now=fixtures.NOW,
+        terminal=fixtures.terminal(),
+        account=fixtures.account(),
+        positions=(slid,),
+        deals=(),
+        terms_by_symbol={"XAUUSD": fixtures.gold()},
+        config=RiskConfig(),
+        opening_baseline={slid.ticket: fixtures.position().opened_at},
+    )
+    refusal = ADAPTER.carry_log_refusal(report)
+    assert refusal is not None
+    assert "continuity guard fired" in refusal
+    assert ADAPTER.append_carry_log(tmp_path / "carry.jsonl", report, 4_042.0) == 0
+
+
+def test_the_recorded_row_names_where_its_offset_came_from(tmp_path: Path) -> None:
+    path = tmp_path / "carry.jsonl"
+    ADAPTER.append_carry_log(path, _report(), 4_042.0)
+    row = json.loads(path.read_text(encoding="utf-8").strip())
+    assert row["server_offset_source"] == "measured"
+    assert row["server_offset_hours"] == pytest.approx(fixtures.SERVER_OFFSET_HOURS)

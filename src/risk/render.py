@@ -17,6 +17,7 @@ mistake as calling it a diagnostic.
 from __future__ import annotations
 
 import textwrap
+from typing import Final
 
 from risk.carry import PositionCarry
 from risk.limits import ConcurrencyStatus, DailyLossStatus
@@ -24,6 +25,7 @@ from risk.margin import MarginProjection
 from risk.notify import Severity
 from risk.refusal import Refusal
 from risk.report import RiskReport
+from risk.state import OFFSET_MEASURED
 from risk.swap import SwapDivergence, SwapVerdict
 
 WIDTH = 78
@@ -125,6 +127,7 @@ def render(report: RiskReport) -> str:
 
     lines += _render_alerts(report)
     lines += _render_refusals(report.refusals)
+    lines += _render_clock(report)
     lines += _render_swap(report.swap)
     lines += _render_account(report, ccy)
     lines += _render_positions(report, ccy)
@@ -132,6 +135,77 @@ def render(report: RiskReport) -> str:
     lines += _render_limits(report.daily_loss, report.concurrency, ccy)
 
     return "\n".join(lines)
+
+
+#: Every figure that is a function of the server clock offset, and therefore
+#: void when the offset is wrong. Written out rather than described, because
+#: "the timing figures" is exactly the kind of phrase a reader completes
+#: differently from the person who wrote it -- and `[MEASURED]` 2026-08-02, a
+#: bad offset moved the headline divergence ratio while leaving the charge it
+#: was computed from untouched.
+OFFSET_DEPENDENT: Final[tuple[str, ...]] = (
+    "every position's opened_at, and so hours open and days open",
+    "nights held, and the triple-swap weekday in the carry log",
+    "the measured financing rate on BOTH denominators, per day and per night",
+    "the measured swap divergence ratio, and whether it exceeds the registry",
+    "every carry projection, and days-to-stop-out, which use that rate",
+    "the daily loss limit, which is measured over the SERVER day",
+)
+
+#: Everything that is read rather than derived, and so survives a wrong clock.
+#: Present so that a refusal does not read as "nothing here is usable".
+OFFSET_INDEPENDENT: Final[tuple[str, ...]] = (
+    "financing PAID so far - the broker's own figure, not a derivation",
+    "equity, balance, margin, margin level, and the stop-out distance in %",
+    "the published swap fields, the price, and the open position count",
+    "position sizing, which is scaled to ATR and never to a clock",
+)
+
+
+def _render_clock(report: RiskReport) -> list[str]:
+    """Render the server clock and, when it is suspect, its blast radius.
+
+    Args:
+        report: The report.
+
+    Returns:
+        Lines. Empty when the clock was freshly measured and nothing moved,
+        because a healthy clock needs no paragraph.
+    """
+    terminal = report.terminal
+    fresh = terminal.server_offset_source == OFFSET_MEASURED
+    if fresh and report.timing_is_trustworthy:
+        return []
+
+    lines = _header("SERVER CLOCK - which figures below depend on it")
+    lines.append(
+        _row(
+            "server offset",
+            "UNAVAILABLE"
+            if terminal.server_utc_offset_hours is None
+            else f"{terminal.server_utc_offset_hours:+.1f} hours from UTC",
+        )
+    )
+    lines.append(_row("source", terminal.server_offset_source))
+    if not report.timing_is_trustworthy and report.timing_refusal is not None:
+        lines.append(_row("continuity guard", "FIRED - timing is REFUSED"))
+        lines += _wrap(report.timing_refusal.reason)
+    elif not fresh:
+        lines += _wrap(
+            "this offset was not measured from a fresh tick on this run, so "
+            "it may be inherited from a reading taken while the market was "
+            "closed. Treat every figure in the first list as unverified"
+        )
+
+    lines.append("")
+    lines.append("  VOID if the offset is wrong")
+    for item in OFFSET_DEPENDENT:
+        lines += _wrap(item, bullet="- ")
+    lines.append("")
+    lines.append("  UNAFFECTED - read, not derived")
+    for item in OFFSET_INDEPENDENT:
+        lines += _wrap(item, bullet="- ")
+    return lines
 
 
 def _render_alerts(report: RiskReport) -> list[str]:
