@@ -85,6 +85,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Final
 
+from risk.carry_log import StructuralStatus
 from risk.clock import (
     SWAP_UNITS_PER_CALENDAR_DAY,
     RolloverClock,
@@ -255,6 +256,7 @@ def position_carry(
     clock: RolloverClock | None,
     horizons: tuple[float, ...],
     minimum_days_for_measured_rate: float,
+    structural_status: StructuralStatus | None = None,
 ) -> PositionCarry:
     """Assemble the financing picture for one position.
 
@@ -268,6 +270,9 @@ def position_carry(
         horizons: Forward horizons in calendar days.
         minimum_days_for_measured_rate: How long a position must have been
             open before its own charge history is used as a rate.
+        structural_status: What the carry log currently establishes, so that
+            the price-dependence note is dated by the log rather than by a
+            literal.
 
     Returns:
         The position's financing report, including every refusal it hit.
@@ -395,14 +400,19 @@ def position_carry(
         except ValueError:
             swap_mode = None
         if swap_mode is not None and swap_mode.is_price_dependent:
+            structural = (
+                structural_status.as_sentence()
+                if structural_status is not None
+                else "UNDETERMINED - no carry log was supplied to this report"
+            )
             notes.append(
                 f"swap_mode is {swap_mode.name}, which declares the financing "
                 f"rate to be itself a function of price -- if it holds, the "
                 f"projections below hold price constant for the rate as well "
                 f"as for equity, and a rising market raises the dollar carry "
                 f"on a long above every figure shown. Whether it holds is "
-                f"UNDETERMINED as of 2026-08-01; the projection is the "
-                f"conservative reading either way"
+                f"{structural}; the projection is the conservative reading "
+                f"either way"
             )
 
     if (

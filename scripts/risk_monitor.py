@@ -98,6 +98,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
 
+from risk.carry_log import (
+    MIN_RESOLVED_NIGHTS,
+    StructuralStatus,
+    parse_rows,
+    project_completion,
+    status_from_rows,
+)
 from risk.clock import (
     MAX_PLAUSIBLE_UTC_OFFSET_HOURS,
     MIN_PLAUSIBLE_UTC_OFFSET_HOURS,
@@ -861,6 +868,7 @@ def take_reading(
         price_by_symbol={symbol: price} if price is not None else None,
         opening_baseline=baseline,
         previous_reading_at=previous_at,
+        structural_status=read_structural_status(state_dir / CARRY_LOG_NAME),
     )
     # Written whether or not the guard fired: the baseline keeps FIRST-seen
     # values, so a bad reading cannot overwrite a good one, and recording the
@@ -872,6 +880,27 @@ def take_reading(
 # --------------------------------------------------------------------------
 # Heartbeat
 # --------------------------------------------------------------------------
+
+
+def read_structural_status(path: Path) -> StructuralStatus:
+    """Load the carry log and summarise what it currently establishes.
+
+    Args:
+        path: The carry log.
+
+    Returns:
+        The status. An unreadable or refused log yields an empty one rather
+        than an exception -- a monitor must not stop taking readings because
+        the file it writes into cannot be analysed.
+    """
+    if not path.exists():
+        return status_from_rows(())
+    try:
+        return status_from_rows(
+            parse_rows(path.read_text(encoding="utf-8").splitlines())
+        )
+    except (OSError, ValueError):
+        return status_from_rows(())
 
 
 def carry_log_refusal(report: RiskReport) -> str | None:
@@ -1275,6 +1304,7 @@ def run_probe(
         price_by_symbol={symbol: price} if price is not None else None,
         opening_baseline=baseline,
         previous_reading_at=previous_at,
+        structural_status=read_structural_status(state_dir / CARRY_LOG_NAME),
     )
     save_openings(openings_path, merge_openings(baseline, positions), now)
 
@@ -1292,10 +1322,24 @@ def run_probe(
     row("rows appended by this run", written)
     row("rows in the log now", count_carry_rows(carry_log))
     if written:
-        note("The structural test reads INCREMENTS between rows, so one row on")
-        note("its own settles nothing. Two rows either side of a charging event")
-        note("give one night; risk.carry_log needs five, and a price path that")
-        note("changes direction twice.")
+        status = read_structural_status(carry_log)
+        row(
+            "charging events resolved",
+            f"{status.resolved_nights} of {MIN_RESOLVED_NIGHTS}",
+        )
+        needed, when = project_completion(status.resolved_nights, now)
+        if when is None:
+            note("Enough charging events. The shape test can fire; whether it")
+            note("does depends on the price path having reversed twice.")
+        else:
+            row("still needed", needed)
+            row("earliest the last of them posts", f"{when:%A %Y-%m-%d %H:%M} UTC")
+            row("readable on", f"{(when + timedelta(hours=12)):%A %Y-%m-%d}")
+            note("On the planning schedule only -- five charging events span one")
+            note("full trading week whichever weekday carries the triple. The")
+            note("analysis never assumes it; the multiplier is inferred.")
+            note("THE POSITION MUST STAY OPEN UNTIL THEN, and one reading a day")
+            note("between now and then is enough: each brackets one event.")
         note("Read it with:  python scripts/analyse_carry_log.py " + str(carry_log))
     elif refused is not None:
         row("appending was", "REFUSED")

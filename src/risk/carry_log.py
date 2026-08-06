@@ -368,6 +368,124 @@ def parse_rows(lines: Iterable[str]) -> tuple[CarryRow, ...]:
     return tuple(out)
 
 
+#: Server weekdays on which a charge posts, ``0`` = Monday. Sunday through
+#: Thursday: the nights Sun->Mon, Mon->Tue, Tue->Wed, Wed->Thu and Thu->Fri,
+#: with the Wednesday event carrying the weekend at triple rate. Five events,
+#: seven nights.
+#:
+#: **This is a schedule MODEL and it is used for PLANNING ONLY** -- to answer
+#: "how many more days of readings do I need". Nothing in :func:`analyse` reads
+#: it: the multiplier is inferred from the increments and the triple-swap
+#: weekday is measured rather than assumed, because a schedule assumed here
+#: would decide the very thing the log exists to observe.
+PLANNING_CHARGING_WEEKDAYS: Final = (6, 0, 1, 2, 3)
+
+#: Rollover in UTC under New York summer time, for the same planning purpose.
+PLANNING_ROLLOVER_UTC_HOUR: Final = 21
+
+
+@dataclass(frozen=True, slots=True)
+class StructuralStatus:
+    """What the log establishes about the structure, as of its own latest row.
+
+    Exists so that no module has to hard-code a date. `[MEASURED]` a fixed
+    string reading "UNDETERMINED as of 2026-08-01" was still being printed
+    after the evidence had moved on, and a stale date in an output is quoted
+    as though the evidence stopped there.
+
+    Attributes:
+        verdict: The structural verdict the log currently supports.
+        resolved_nights: Charging events reconstructed from it.
+        latest_reading_at: The most recent row's timestamp, or ``None`` when
+            there are no rows.
+        rows: How many readings the log holds.
+        reasons: Why power was not reached, if it was not.
+    """
+
+    verdict: StructureVerdict
+    resolved_nights: int
+    latest_reading_at: datetime | None
+    rows: int
+    reasons: tuple[str, ...]
+
+    def as_sentence(self) -> str:
+        """Describe the state of the evidence in one clause.
+
+        Returns:
+            Text suitable for interpolation into a report note, dated by the
+            log rather than by whoever wrote the sentence.
+        """
+        if self.latest_reading_at is None:
+            return "UNDETERMINED - the carry log holds no readings yet"
+        return (
+            f"{self.verdict.value} as of the latest carry-log reading, "
+            f"{self.latest_reading_at:%Y-%m-%d %H:%M} UTC, over "
+            f"{self.resolved_nights} charging event"
+            f"{'' if self.resolved_nights == 1 else 's'} in "
+            f"{self.rows:,} row{'' if self.rows == 1 else 's'}"
+        )
+
+
+def status_from_rows(rows: Sequence[CarryRow]) -> StructuralStatus:
+    """Summarise what a carry log currently supports.
+
+    Args:
+        rows: Every reading, any order. May be empty.
+
+    Returns:
+        The status. An empty log is ``UNDETERMINED`` with no date, which is
+        not the same as a log that ran and settled nothing.
+    """
+    if not rows:
+        return StructuralStatus(StructureVerdict.UNDETERMINED, 0, None, 0, ())
+    latest = max(r.at for r in rows)
+    by_ticket: dict[int, list[CarryRow]] = {}
+    for row in rows:
+        by_ticket.setdefault(row.ticket, []).append(row)
+    # The most-resolved ticket is the one the structural claim rests on;
+    # pooling two positions' increments would compare a rate against itself.
+    best = max(
+        (analyse(group) for group in by_ticket.values()),
+        key=lambda a: a.power.resolved_nights,
+    )
+    return StructuralStatus(
+        verdict=best.verdict,
+        resolved_nights=best.power.resolved_nights,
+        latest_reading_at=latest,
+        rows=len(rows),
+        reasons=best.power.reasons,
+    )
+
+
+def project_completion(
+    resolved_nights: int, now: datetime
+) -> tuple[int, datetime | None]:
+    """When the fifth charging event can be reached, on the planning schedule.
+
+    Args:
+        resolved_nights: Charging events already reconstructed.
+        now: Current instant, timezone-aware UTC.
+
+    Returns:
+        ``(events still needed, when the last of them posts)``. The instant is
+        ``None`` when nothing more is needed. **Planning only** -- it uses
+        :data:`PLANNING_CHARGING_WEEKDAYS`, which :func:`analyse` never reads.
+    """
+    needed = max(0, MIN_RESOLVED_NIGHTS - resolved_nights)
+    if needed == 0:
+        return 0, None
+    found: list[datetime] = []
+    moment = now.replace(minute=0, second=0, microsecond=0)
+    while len(found) < needed:
+        moment += timedelta(hours=1)
+        if (
+            moment.hour == PLANNING_ROLLOVER_UTC_HOUR
+            and moment.weekday() in PLANNING_CHARGING_WEEKDAYS
+        ):
+            found.append(moment)
+    return needed, found[-1]
+
+
 def row_is_untrustworthy(row: CarryRow) -> str | None:
     """Whether a row's timing fields may be read.
 

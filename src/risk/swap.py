@@ -156,6 +156,7 @@ from backtest.costs import (
     SWAP_LONG_POINTS_PER_LOT_PER_NIGHT,
     SWAP_SHORT_POINTS_PER_LOT_PER_NIGHT,
 )
+from risk.carry_log import MIN_RESOLVED_NIGHTS, StructuralStatus
 from risk.clock import DAYS_PER_WEEK, REGISTERED_NIGHTS_PER_WEEK, SWAP_UNITS_PER_WEEK
 from risk.refusal import Refusal, RefusalCode
 from risk.state import SymbolTerms, value_per_point_per_lot
@@ -588,6 +589,7 @@ def swap_divergence(
     measured_nightly_points: dict[str, float] | None = None,
     published_swap_long: float | None = None,
     published_swap_short: float | None = None,
+    structural_status: StructuralStatus | None = None,
 ) -> SwapDivergence:
     """Compare the broker's financing against the registered substitute.
 
@@ -614,6 +616,9 @@ def swap_divergence(
         published_swap_long: ``swap_long`` exactly as read, carried through
             whether or not it could be converted.
         published_swap_short: ``swap_short`` exactly as read.
+        structural_status: What the carry log currently establishes about the
+            structure. Supplied so that the note below is dated by the log's
+            own latest row rather than by a literal.
 
     Returns:
         The finding. ``verdict`` is ``UNAVAILABLE`` only when neither route
@@ -674,17 +679,26 @@ def swap_divergence(
 
     price_dependent = effective_mode is not None and effective_mode.is_price_dependent
     if price_dependent and effective_mode is not None:
+        # Dated by the log rather than by whoever wrote the sentence. A fixed
+        # date here was still being printed after the evidence had moved on,
+        # and a stale date in an output is quoted as though the evidence
+        # stopped there.
+        structural = (
+            structural_status.as_sentence()
+            if structural_status is not None
+            else "UNDETERMINED - no carry log was supplied to this report"
+        )
         notes.insert(
             0,
             f"swap_mode is {effective_mode.name}, which DECLARES the "
             f"account-currency charge to be a FUNCTION OF PRICE rather than a "
             f"constant. The registered substitute is a fixed points rate with "
             f"no price term, so if the declaration holds no value of it would "
-            f"have been right -- wrong in kind, not in magnitude. **Whether it "
-            f"holds is UNDETERMINED**: see risk.carry_log, which needs five "
-            f"charging events and a price path that reverses twice, and had "
-            f"neither as of 2026-08-01. The registered substitute is not "
-            f"vindicated by that -- an untested structure is untested",
+            f"have been right -- wrong in kind, not in magnitude. Whether it "
+            f"holds is {structural} -- see risk.carry_log, which needs "
+            f"{MIN_RESOLVED_NIGHTS} charging events and a price path that "
+            f"reverses twice. The registered substitute is not vindicated by "
+            f"an unsettled structure; untested is untested",
         )
 
     nightly = dict(measured_nightly_points or {})

@@ -29,6 +29,7 @@ from risk.carry import (
     portfolio_carry,
     position_carry,
 )
+from risk.carry_log import StructuralStatus
 from risk.clock import (
     MAX_PLAUSIBLE_UTC_OFFSET_HOURS,
     MIN_PLAUSIBLE_UTC_OFFSET_HOURS,
@@ -154,6 +155,7 @@ def build_report(
     price_by_symbol: dict[str, float] | None = None,
     opening_baseline: Mapping[int, datetime] | None = None,
     previous_reading_at: datetime | None = None,
+    structural_status: StructuralStatus | None = None,
 ) -> RiskReport:
     """Turn one reading of the terminal into a report.
 
@@ -177,6 +179,10 @@ def build_report(
             anything about clocks. See :mod:`risk.continuity`.
         previous_reading_at: When the previous reading was taken, so that a
             host clock that went backwards is caught too.
+        structural_status: What the carry log currently establishes about the
+            swap structure. Threaded through so that the price-dependence
+            notes are dated by the log's own latest row rather than by a
+            literal somewhere in the source.
 
     Returns:
         The report, with alerts already raised but not yet delivered.
@@ -221,6 +227,7 @@ def build_report(
             clock=clock,
             horizons=config.carry_projection_days,
             minimum_days_for_measured_rate=config.minimum_days_for_measured_carry,
+            structural_status=structural_status,
         )
         for p in positions
     )
@@ -241,6 +248,7 @@ def build_report(
             portfolio,
             prices.get(name),
             config,
+            structural_status,
         )
         for name in sorted(terms_by_symbol)
     )
@@ -313,6 +321,7 @@ def _divergence_for(
     portfolio: PortfolioCarry,
     price: float | None,
     config: RiskConfig,
+    structural_status: StructuralStatus | None = None,
 ) -> SwapDivergence:
     """Build one symbol's divergence finding, with the annualised basis.
 
@@ -323,6 +332,7 @@ def _divergence_for(
         portfolio: Book financing, for the measured route.
         price: Current price, or ``None``.
         config: Operating limits.
+        structural_status: What the carry log establishes, for the note.
 
     Returns:
         The finding.
@@ -348,6 +358,7 @@ def _divergence_for(
         measured_nightly_points=portfolio.per_lot_per_night_points.get(name, {}),
         published_swap_long=terms.swap_long,
         published_swap_short=terms.swap_short,
+        structural_status=structural_status,
     )
 
 

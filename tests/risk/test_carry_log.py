@@ -12,13 +12,16 @@ apart when handed a real log.
 """
 
 import json
+import statistics
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
 from risk.carry_log import (
     CHARGE_RESOLUTION,
     MIN_RESOLVED_NIGHTS,
+    PLANNING_CHARGING_WEEKDAYS,
     POWER_MARGIN,
     SEPARATION_FACTOR,
     CarryRow,
@@ -26,6 +29,8 @@ from risk.carry_log import (
     analyse,
     nightly_charges,
     parse_rows,
+    project_completion,
+    status_from_rows,
 )
 
 START = datetime(2026, 8, 2, 21, 0, tzinfo=UTC)
@@ -512,3 +517,156 @@ def test_a_row_with_no_offset_at_all_is_not_refused() -> None:
     payload["server_offset_hours"] = None
     del payload["server_offset_source"]
     assert parse_rows([json.dumps(payload)])[0].server_offset_hours is None
+
+
+# --------------------------------------------------------------------------
+# The status the report quotes, dated by the log rather than by a literal
+# --------------------------------------------------------------------------
+
+
+def test_an_empty_log_is_undetermined_with_no_date_to_go_stale() -> None:
+    status = status_from_rows(())
+    assert status.verdict is StructureVerdict.UNDETERMINED
+    assert status.latest_reading_at is None
+    assert status.resolved_nights == 0
+    assert "holds no readings yet" in status.as_sentence()
+
+
+def test_the_sentence_carries_the_logs_own_latest_row() -> None:
+    # `[MEASURED]` a fixed string reading "UNDETERMINED as of 2026-08-01" was
+    # still being printed after the evidence had moved on. A stale date in an
+    # output is quoted as though the evidence stopped there.
+    rows = _week(LIVELY, price_dependent=True)
+    status = status_from_rows(rows)
+    latest = max(r.at for r in rows)
+    assert status.latest_reading_at == latest
+    assert f"{latest:%Y-%m-%d %H:%M}" in status.as_sentence()
+    assert status.resolved_nights == len(LIVELY)
+    assert str(len(rows)) in status.as_sentence()
+
+
+def test_a_settled_week_says_so_rather_than_saying_undetermined() -> None:
+    status = status_from_rows(_week(LIVELY, price_dependent=True))
+    assert status.verdict is StructureVerdict.PRICE_DEPENDENT
+    assert status.as_sentence().startswith("PRICE_DEPENDENT as of")
+
+
+def test_the_singular_reads_correctly_on_one_event() -> None:
+    rows = _week([2_400.0], price_dependent=False)
+    sentence = status_from_rows(rows).as_sentence()
+    assert "1 charging event in" in sentence
+    assert "charging events" not in sentence
+
+
+def test_two_positions_do_not_pool_their_increments() -> None:
+    # Pooling would compare one instrument's rate against another's.
+    first = _week(LIVELY, price_dependent=False)
+    second = [
+        CarryRow(
+            at=r.at,
+            ticket=99,
+            carry_paid=r.carry_paid,
+            price=r.price,
+            volume=r.volume,
+            server_offset_hours=r.server_offset_hours,
+        )
+        for r in _week(LIVELY[:2], price_dependent=False)
+    ]
+    status = status_from_rows([*first, *second])
+    assert status.resolved_nights == len(LIVELY)
+
+
+# --------------------------------------------------------------------------
+# The planning projection -- a schedule model, and only for planning
+# --------------------------------------------------------------------------
+
+
+def test_five_charging_events_span_one_full_trading_week() -> None:
+    # From Thursday 2026-08-06, the fifth event posts on Wednesday 2026-08-12.
+    needed, when = project_completion(0, datetime(2026, 8, 6, 18, 50, tzinfo=UTC))
+    assert needed == MIN_RESOLVED_NIGHTS
+    assert when == datetime(2026, 8, 12, 21, 0, tzinfo=UTC)
+    assert when.strftime("%A") == "Wednesday"
+
+
+def test_nothing_is_projected_once_the_threshold_is_reached() -> None:
+    assert project_completion(
+        MIN_RESOLVED_NIGHTS, datetime(2026, 8, 6, tzinfo=UTC)
+    ) == (
+        0,
+        None,
+    )
+
+
+def test_a_partly_resolved_log_projects_only_what_is_left() -> None:
+    # Two more from Thursday evening: that night's, then Sunday's -- Friday
+    # and Saturday nights carry no charging event.
+    needed, when = project_completion(3, datetime(2026, 8, 6, 18, 50, tzinfo=UTC))
+    assert needed == 2
+    assert when == datetime(2026, 8, 9, 21, 0, tzinfo=UTC)
+    assert when.strftime("%A") == "Sunday"
+
+
+def test_the_planning_schedule_carries_seven_nights_over_five_events() -> None:
+    # The arithmetic that makes the week's night count 7 rather than 5, which
+    # is the same 7 the registry counts. Consistency worth pinning.
+    _, when = project_completion(0, datetime(2026, 8, 6, 18, 50, tzinfo=UTC))
+    assert when is not None
+    events = list(PLANNING_CHARGING_WEEKDAYS)
+    assert len(events) == MIN_RESOLVED_NIGHTS
+    assert sum(3 if d == 2 else 1 for d in events) == 7
+
+
+def test_the_planning_schedule_is_never_read_by_the_verdict() -> None:
+    # A schedule assumed here would decide the very thing the log observes.
+    source = Path("src/risk/carry_log.py").read_text(encoding="utf-8")
+    body = source[source.index("def analyse(") :]
+    assert "PLANNING_CHARGING_WEEKDAYS" not in body
+    assert "PLANNING_ROLLOVER_UTC_HOUR" not in body
+
+
+# --------------------------------------------------------------------------
+# Why an aggregate cannot bear on price-dependence
+# --------------------------------------------------------------------------
+
+
+def test_the_total_is_invariant_to_the_shape_the_test_exists_to_see() -> None:
+    # `[MEASURED]` 2026-08-06: 47.53 over 7 nights on 0.10 lots, gold +4.18%.
+    # Under PRICE_DEPENDENT the total is k*sum(P), which depends on the MEAN
+    # price and on nothing else about the path -- because P -> k*P is linear.
+    # Three paths with the same mean and wildly different shapes:
+    mean_price = 4_175.92
+    monotone = [4_090.38 + (4_261.46 - 4_090.38) * i / 6 for i in range(7)]
+    monotone = [p + (mean_price - statistics.fmean(monotone)) for p in monotone]
+    swinging = [mean_price + d for d in (-200, -100, 0, 100, 200, -50, 50)]
+    swinging = [p + (mean_price - statistics.fmean(swinging)) for p in swinging]
+    spiky = [mean_price + d for d in (-500, 500, -500, 500, -500, 500, 0)]
+    spiky = [p + (mean_price - statistics.fmean(spiky)) for p in spiky]
+
+    k = 47.53 / (0.10 * sum(monotone))
+    totals = [k * 0.10 * sum(path) for path in (monotone, swinging, spiky)]
+    ranges = [
+        (max(p) - min(p)) / statistics.fmean(p) for p in (monotone, swinging, spiky)
+    ]
+
+    assert totals[0] == pytest.approx(47.53)
+    assert totals[1] == pytest.approx(totals[0])
+    assert totals[2] == pytest.approx(totals[0])
+    # ...while the ranges differ by a factor of six. The aggregate is blind to
+    # exactly the quantity the structural test measures.
+    assert max(ranges) / min(ranges) > 5.0
+
+
+def test_the_shape_test_separates_the_paths_the_total_cannot() -> None:
+    # The converse, so the claim above is bounded rather than absolute: what
+    # the aggregate cannot see, the pre-committed instrument can.
+    priced = analyse(_week(LIVELY, price_dependent=True))
+    fixed = analyse(_week(LIVELY, price_dependent=False))
+    assert priced.verdict is StructureVerdict.PRICE_DEPENDENT
+    assert fixed.verdict is StructureVerdict.FIXED_RATE
+    # And their totals, per night, are within a percent of each other -- which
+    # is why the level comparison would have called them the same thing.
+    assert priced.charge_per_lot_per_night is not None
+    assert fixed.charge_per_lot_per_night is not None
+    ratio = priced.charge_per_lot_per_night / fixed.charge_per_lot_per_night
+    assert 0.99 < ratio < 1.01

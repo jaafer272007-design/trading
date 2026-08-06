@@ -1575,6 +1575,77 @@ risk management" actually are**
 > a note beside them. The arithmetic is pinned in `tests/backtest/test_costs.py` so that it
 > is a test rather than a paragraph.
 
+**2026-08-06 — seven nights, and what an aggregate can and cannot do**
+
+> Appended, not edited. No re-run, **no `hypothesis_id`, no `N_claims` draw — `N_claims` stays
+> at 6.** Taken after the clock defect of 2026-08-02 was fixed: offset `+3.0` measured from a
+> live tick, `opened_at` correct, both guards silent.
+>
+> `[MEASURED]` a live long of **0.10 lots**, held **171.6 hours across 7 nights**, was charged
+> **47.53** in the deposit currency while gold moved **4,090.38 → 4,261.46 (+4.18%)**. That is
+> **6.79 a night**, **67.900 points per lot per night**, equal to the published `swap_long` to
+> three decimals.
+>
+> **The aggregate cannot bear on price-dependence. Not weakly — exactly not at all.**
+>
+> Under `PRICE_DEPENDENT` the charge on night `n` is `k·P_n`, so the total is `k·Σ P_n =
+> k·N·P̄`. Under `FIXED_RATE` it is `c·N`. Each model has **one free parameter** and the total
+> is **one number**: exactly identified, zero degrees of freedom left for a test. The reason is
+> that `P ↦ k·P` is **linear**, so `E[k·P] = k·E[P]` — the mean charge *is* the charge at the
+> mean price, and the aggregate is invariant to everything the shape test exists to see. A
+> monotone path, a V, and a path oscillating over a 24% range with the same mean all produce
+> **the identical total**. Pinned in `tests/risk/test_carry_log.py`.
+>
+> **So the seven-night total settles the magnitude and nothing about the structure**, exactly
+> as the 2026-08-01 two-night total did. More nights do not help. This is a property of the
+> statistic, not of the sample size.
+>
+> **The total compared against the published field is a different comparison, and it is
+> evidence.**
+>
+> This is the part that must not be left ambiguous. The observation is not "the total was
+> 47.53". It is "the total was 47.53 **and the broker independently publishes 67.9**". Under
+> `PRICE_DEPENDENT` with a static calibration price `P_ref`, the mean charge is
+> `67.9 · P̄/P_ref`, so observing exactly 67.9 **pins `P_ref = P̄`**. The posting resolution is
+> one cent on the total, which over seven nights is **±0.0105%** on the rate — so `P_ref` is
+> pinned to this week's mean price within about ±0.44 dollars.
+>
+> | if the field were a coefficient calibrated at… | expected total | observed | gap |
+> |---|---|---|---|
+> | the week's opening price, 4,090.38 | **48.52** | 47.53 | **99x** the posting resolution |
+> | the week's closing price, 4,261.46 | **46.58** | 47.53 | **95x** the posting resolution |
+> | this week's mean, 4,175.92 | 47.53 | 47.53 | — |
+>
+> `[MEASURED]` against this project's own snapshot, the odds of a fixed calibration price
+> landing in that window by chance, under a uniform prior over gold's recent range:
+>
+> | prior over when the broker last calibrated | gold's range | odds against |
+> |---|---|---|
+> | trailing 1 month | 3,963–4,188 | **1 in 257** |
+> | trailing 3 months | 3,963–4,767 | **1 in 917** |
+> | trailing 1 year | 3,269–5,563 | **1 in 2,615** |
+>
+> A uniform prior is *generous* to price-dependence: it assumes the broker is as likely to have
+> calibrated at this particular week's mean as anywhere else, and nothing makes that true.
+>
+> **The verdict: evidence, not coincidence — and it is evidence for the reading, not the
+> structural test's answer.** Two things follow and they must not be run together.
+>
+> 1. Against a **static** price-dependent calibration, the match is a two-to-three-order-of-
+>    magnitude likelihood ratio in favour of the field being applied at face value. That is
+>    strong, it is Bayesian reasoning with a stated prior, and it is **not a measurement.**
+> 2. Against a **re-quoted** price-dependent rate — the broker resetting `swap_long` as gold
+>    moves — the match is worth **nothing**, because under that hypothesis the charge tracks
+>    the field by construction. The discriminator is whether the *field itself* moved, which
+>    the log has recorded on every reading since 2026-08-01 and which
+>    `risk.carry_log.FieldStability` reports.
+>
+> **The pre-committed instrument is unchanged and still governs.** `MIN_RESOLVED_NIGHTS = 5`,
+> `MIN_REVERSALS = 2`, `SEPARATION_FACTOR = 3` are as fixed in 2026-07-30 as they were then.
+> Nothing above is permitted to substitute for them, and **no threshold was moved in the light
+> of this reading.** The reasoning is recorded because burying it would be choosing which
+> arguments to publish; the verdict still comes from the log.
+
 ### H-006 — The evaluation window is a declared boundary, not a truncation
 
 - **Registered:** 2026-07-27 13:20 UTC
